@@ -1,0 +1,21 @@
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# Go
+backend/bin/
+*.exe
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
