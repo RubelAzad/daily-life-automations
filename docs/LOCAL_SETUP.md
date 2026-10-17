@@ -58,7 +58,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000. The home page shows the live API/database status and sign-in state; create an account at `/register`. Restart `npm run dev` after changing `.env.local`.
+Open http://localhost:3000. The home page shows the live API/database status and sign-in state; create an account at `/register`. After signing in you land on **Today** (`/today`): overdue and due tasks, today's events, reminders still to come, and expiring documents. Restart `npm run dev` after changing `.env.local`.
 
 New accounts take the browser's time zone. Check it on the Settings page (your name in the header): the server uses it for repeating dates, expiry reminders and quiet hours, while screens use the device's time zone.
 

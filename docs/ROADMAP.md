@@ -16,13 +16,13 @@ All 20 modules from [DAILY_LIFE_MODULES.md](DAILY_LIFE_MODULES.md), split into s
 | 1.6 | Reminders, in-app notifications, first worker process | 4 | ✅ Done |
 | 1.7 | Notes, tags, file uploads (local storage) | 9 | ✅ Done |
 | 1.8 | User settings: time zone, quiet hours, approval preferences | 20 | ✅ Done |
-| 1.9 | Dashboard "Today" view, carry-forward of unfinished tasks | 1 | ⬜ Next |
+| 1.9 | Dashboard "Today" view, carry-forward of unfinished tasks | 1 | ✅ Done |
 
 ## Phase 2 — AI assistant
 
 | Step | Scope | Module | Status |
 |---|---|---|---|
-| 2.1 | LLM client, typed tool allowlist, AI audit log | 17 | ⬜ |
+| 2.1 | LLM client, typed tool allowlist, AI audit log | 17 | ⬜ Next |
 | 2.2 | Chat endpoint: intent → planner → tools (`create_task`, `list_tasks`, …) | 17 | ⬜ |
 | 2.3 | AI daily plan, morning briefing, end-of-day summary | 1, 17 | ⬜ |
 | 2.4 | Personal knowledge search across notes and files | 9, 17 | ⬜ |

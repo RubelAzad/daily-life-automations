@@ -27,12 +27,16 @@ type TaskFilter struct {
 	MilestoneID *uint64
 	NoMilestone bool    // tasks with no milestone (e.g. a project's "other tasks")
 	ParentID    *uint64 // nil = top-level tasks only
-	Query       string
-	DueFrom     *time.Time
-	DueTo       *time.Time
-	Sort        string
-	Limit       int
-	Offset      int
+	// IncludeSubtasks ignores ParentID and returns tasks at every level.
+	IncludeSubtasks bool
+	Query           string
+	DueFrom         *time.Time
+	DueTo           *time.Time
+	CompletedFrom   *time.Time
+	CompletedTo     *time.Time
+	Sort            string
+	Limit           int
+	Offset          int
 }
 
 // taskOrders is the allowlist of sort keys; user input never reaches SQL.
@@ -53,7 +57,7 @@ func IsValidTaskSort(s string) bool {
 
 const taskSelect = `
 	SELECT t.id, t.user_id, t.list_id, t.project_id, t.milestone_id, t.parent_id, t.title, t.description, t.status, t.priority,
-	       t.due_at, t.completed_at, t.recurrence, t.recurrence_interval, t.recurrence_until,
+	       t.due_at, t.carry_count, t.completed_at, t.recurrence, t.recurrence_interval, t.recurrence_until,
 	       t.recurrence_anchor_at, t.next_task_id, t.created_at, t.updated_at,
 	       (SELECT COUNT(*) FROM tasks s WHERE s.parent_id = t.id),
 	       (SELECT COUNT(*) FROM tasks s WHERE s.parent_id = t.id AND s.status = 'completed')
@@ -63,9 +67,11 @@ func (r TaskRepository) List(ctx context.Context, userID uint64, f TaskFilter) (
 	where := []string{"t.user_id = ?"}
 	args := []any{userID}
 
-	if f.ParentID == nil {
+	switch {
+	case f.IncludeSubtasks:
+	case f.ParentID == nil:
 		where = append(where, "t.parent_id IS NULL")
-	} else {
+	default:
 		where = append(where, "t.parent_id = ?")
 		args = append(args, *f.ParentID)
 	}
@@ -106,6 +112,14 @@ func (r TaskRepository) List(ctx context.Context, userID uint64, f TaskFilter) (
 	if f.DueTo != nil {
 		where = append(where, "t.due_at < ?")
 		args = append(args, f.DueTo.UTC())
+	}
+	if f.CompletedFrom != nil {
+		where = append(where, "t.completed_at >= ?")
+		args = append(args, f.CompletedFrom.UTC())
+	}
+	if f.CompletedTo != nil {
+		where = append(where, "t.completed_at < ?")
+		args = append(args, f.CompletedTo.UTC())
 	}
 	whereSQL := strings.Join(where, " AND ")
 
@@ -190,6 +204,22 @@ func (r TaskRepository) Update(ctx context.Context, t models.Task) (models.Task,
 		return models.Task{}, err
 	}
 	return r.Get(ctx, t.UserID, t.ID)
+}
+
+// CarryForward moves an open task to a new due time and counts the move.
+// Returns ErrNotFound if the task isn't the user's or is no longer open.
+func (r TaskRepository) CarryForward(ctx context.Context, userID, id uint64, due time.Time) error {
+	res, err := r.DB.ExecContext(ctx,
+		`UPDATE tasks SET due_at = ?, carry_count = carry_count + 1
+		  WHERE id = ? AND user_id = ? AND status IN ('pending', 'in_progress')`,
+		due.UTC(), id, userID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // Delete removes the task; subtasks and dependency links cascade.
@@ -306,7 +336,7 @@ func scanTask(row rowScanner) (models.Task, error) {
 		until    *time.Time
 	)
 	err := row.Scan(&t.ID, &t.UserID, &t.ListID, &t.ProjectID, &t.MilestoneID, &t.ParentID, &t.Title, &t.Description, &t.Status, &t.Priority,
-		&t.DueAt, &t.CompletedAt, &freq, &interval, &until, &t.RecurrenceAnchorAt, &t.NextTaskID,
+		&t.DueAt, &t.CarryCount, &t.CompletedAt, &freq, &interval, &until, &t.RecurrenceAnchorAt, &t.NextTaskID,
 		&t.CreatedAt, &t.UpdatedAt, &t.SubtaskCount, &t.SubtasksCompleted)
 	if freq.Valid {
 		t.Recurrence = &models.Recurrence{Frequency: freq.String, Interval: interval, Until: until}

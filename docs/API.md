@@ -26,6 +26,21 @@ Base URL: `http://localhost:8080/api/v1`. Request and response bodies are JSON.
 | POST | `/auth/logout` | — | `204`, ends the session |
 | GET | `/auth/me` | — | `200 {"user"}` |
 
+## Today
+
+`GET /today` returns the user's current day, from local midnight to midnight in their settings time zone:
+
+| Field | Contents |
+|---|---|
+| `date`, `timezone`, `starts_at`, `ends_at` | The day: `YYYY-MM-DD`, the zone, and its bounds as UTC instants (a daylight-saving day can be 23 or 25 hours) |
+| `summary` | `{overdue, due_today, completed_today, events, conflicts}` counts. `overdue`, `due_today` and `completed_today` are totals even when the lists are cut off. |
+| `overdue` | Open tasks (including subtasks) due before today, oldest first, at most 100 |
+| `due_today` | Open tasks due today, at most 100 |
+| `completed_today` | Tasks completed today, whatever their due date, at most 50 |
+| `events` | Occurrences of events on today, all-day events first, with `conflicts_with` as in `/events` |
+| `reminders` | Scheduled reminders that fire before the day ends, at most 50 |
+| `expiring_notes` | Notes (not archived) expired or expiring within 30 days, soonest first, at most 10 |
+
 ## Settings
 
 | Method | Path | Notes |
@@ -58,8 +73,18 @@ Base URL: `http://localhost:8080/api/v1`. Request and response bodies are JSON.
 | DELETE | `/tasks/:id` | `204`. Also deletes the task's subtasks and dependency links. |
 | POST | `/tasks/:id/dependencies` | `depends_on_id`. This task then waits for that one. Returns the updated task. `422` for self, cycle or unknown task. |
 | DELETE | `/tasks/:id/dependencies/:depends_on_id` | Removes the link. Returns the updated task. |
+| POST | `/tasks/carry-forward` | Moves unfinished tasks to a later day. See [Carry forward](#carry-forward). |
 
-**Read-only task fields:** `subtask_count`, `subtasks_completed`, `dependencies` (`[{id, title, status}]`), `blocked`, `next_task_id`.
+**Read-only task fields:** `subtask_count`, `subtasks_completed`, `dependencies` (`[{id, title, status}]`), `blocked`, `next_task_id`, `carry_count`.
+
+### Carry forward
+`POST /tasks/carry-forward` with `{"task_ids": [1, 2], "to": "today" | "tomorrow"}`. Both fields are optional.
+- **No `task_ids`:** moves every open task that is overdue (due before today), including subtasks.
+- **With `task_ids`** (at most 200): each must be yours, open, have a due date, and be due before the target day. Otherwise `422` names the task. Duplicates are ignored.
+- **New due time:** the target day at the task's original local time of day, in the user's time zone. When moving to today and that time has already passed, it becomes 23:59 today, so the task isn't overdue again straight away.
+- Each move adds 1 to the task's `carry_count`, so tasks that keep slipping are easy to spot. Offset reminders move with the due time.
+- Returns `200 {"data": [moved tasks], "meta": {"moved": n}}`.
+- Automatic carry-forward (no click needed) comes with workflow D in Step 3.5.
 
 ### Subtasks
 - Create a subtask with `POST /tasks` and `parent_id`. Subtasks are one level deep: a subtask can't have subtasks of its own. A task can have at most 100.
