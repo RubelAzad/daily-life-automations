@@ -71,7 +71,7 @@ func TestCleanEvening(t *testing.T) {
 
 func TestDueAt(t *testing.T) {
 	dhaka, _ := time.LoadLocation("Asia/Dhaka")
-	now, _ := time.Parse(time.RFC3339, "2026-10-17T02:00:00Z") // 08:00 Dhaka
+	now, _ := time.Parse(time.RFC3339, "2026-10-17T02:00:00Z")                                                                          // 08:00 Dhaka
 	cases := map[string]bool{"07:30": true, "08:00": true, "08:01": false, "05:30": true, "05:00": false, "04:59": false, "bad": false} // 3 h window
 	for at, want := range cases {
 		if got := dueAt(now, dhaka, at); got != want {
