@@ -6,6 +6,7 @@ import { logout, type User } from "@/lib/api";
 
 const NAV = [
   { href: "/tasks", label: "Tasks" },
+  { href: "/calendar", label: "Calendar" },
   { href: "/projects", label: "Projects" },
 ];
 

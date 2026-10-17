@@ -86,6 +86,43 @@ A project groups tasks toward a goal. It's separate from lists: a task can be in
 
 **Dates:** `start_date`, `target_date` and `due_date` are calendar dates (`YYYY-MM-DD`) with no time zone, so "1 Dec" stays 1 Dec for every viewer.
 
+## Calendar events
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/events?from=&to=` | **Required** RFC 3339 range, at most 366 days. Returns every **occurrence** that overlaps the range, sorted by start; repeating events are expanded. Each item is the event plus `conflicts_with: [event ids]`. |
+| POST | `/events` | See fields below. Returns `201 {"data": event, "conflicts": [occurrences]}` |
+| GET | `/events/:id` | The event, or the series for a repeating event. |
+| PATCH | `/events/:id` | Any field. Returns `{"data", "conflicts"}`. Changes a repeating event's **whole series**. |
+| DELETE | `/events/:id` | `204`. Deletes the whole series. |
+
+**Fields:**
+
+| Field | Type | Notes |
+|---|---|---|
+| `title` | string | Required, ≤ 255 |
+| `description` | string | Notes, ≤ 10 000 |
+| `location` | string | ≤ 255 |
+| `all_day` | bool | Default `false` |
+| `starts_at`, `ends_at` | RFC 3339 | Required for timed events. End must be after start; at most 31 days long. |
+| `start_date`, `end_date` | `YYYY-MM-DD` | Required for all-day events; the end date is inclusive and defaults to `start_date`. In responses, all-day events also have `starts_at` set to UTC midnight of the first day and `ends_at` to UTC midnight after the last day. |
+| `buffer_before_minutes` | 0–1440 | Travel or prep time that blocks the calendar before the event starts |
+| `busy` | bool | Default `true`. Free events never conflict. |
+| `color` | `#rrggbb` | |
+| `recurrence` | object | `{frequency, interval, until}`, same as tasks. Occurrences are calculated from the first start, so "monthly on the 31st" doesn't drift. |
+
+**Switching kinds:** setting `all_day: true` with no dates keeps the event's start date. Setting `all_day: false` requires `starts_at` and `ends_at`.
+
+**Conflicts** are warnings and never stop a save.
+- Two **busy, timed** events of *different* events conflict when their blocked time overlaps. Blocked time runs from start minus `buffer_before_minutes` to end.
+- Back-to-back events don't conflict.
+- All-day and free (`busy: false`) events are never in conflict.
+- On save, conflicts are checked across the event's span. A repeating event is checked over its next 90 days, or up to `until` if that's sooner. At most 20 conflicts are returned.
+
+**All-day events and time zones:** all-day events are matched with ±1 day of padding, so the list can include an all-day event from just outside the range. Clients should place them by `start_date`/`end_date`.
+
+**Not yet supported:** editing or deleting a single occurrence of a repeating event (exceptions), and attendees and invitations. Google Calendar sync comes in Step 6.1.
+
 ## Task lists
 
 New accounts start with Personal, Work, Family and Shopping.

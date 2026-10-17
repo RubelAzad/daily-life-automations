@@ -113,6 +113,8 @@ export type TaskQuery = {
   project_id?: number;
   milestone_id?: number | "none";
   q?: string;
+  due_from?: string; // RFC 3339, inclusive
+  due_to?: string; // RFC 3339, exclusive
   sort?: "due_at" | "-due_at" | "created_at" | "-created_at" | "priority";
   page?: number;
   per_page?: number;
@@ -273,6 +275,72 @@ export async function updateMilestone(
 /** Its tasks stay in the project with no milestone. */
 export function deleteMilestone(id: number) {
   return request<void>(`/milestones/${id}`, { method: "DELETE" });
+}
+
+// ---- Calendar --------------------------------------------------------------
+
+export type CalendarEvent = {
+  id: number;
+  title: string;
+  description: string | null;
+  location: string | null;
+  /** UTC instants; for all-day events, UTC midnight of the first day / the day after the last. */
+  starts_at: string;
+  ends_at: string;
+  all_day: boolean;
+  /** "YYYY-MM-DD", inclusive; only for all-day events. */
+  start_date: string | null;
+  end_date: string | null;
+  /** Prep or travel time that also blocks the calendar before the event. */
+  buffer_before_minutes: number;
+  busy: boolean;
+  color: string | null;
+  recurrence: Recurrence | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** One instance in a range. For a recurring event, id is the series. */
+export type EventOccurrence = CalendarEvent & { conflicts_with: number[] };
+
+export type EventInput = {
+  title: string;
+  description: string | null;
+  location: string | null;
+  all_day: boolean;
+  starts_at: string | null; // timed: RFC 3339
+  ends_at: string | null;
+  start_date: string | null; // all-day: "YYYY-MM-DD"
+  end_date: string | null;
+  buffer_before_minutes: number;
+  busy: boolean;
+  color: string | null;
+  recurrence: Recurrence | null;
+};
+
+/** Saving never fails because of overlaps; they come back as warnings. */
+export type SavedEvent = { data: CalendarEvent; conflicts: EventOccurrence[] };
+
+export async function listEvents(from: string, to: string) {
+  const params = new URLSearchParams({ from, to });
+  return (await request<{ data: EventOccurrence[] }>(`/events?${params}`)).data;
+}
+
+export async function getEvent(id: number) {
+  return (await request<{ data: CalendarEvent }>(`/events/${id}`)).data;
+}
+
+export function createEvent(input: Partial<EventInput> & { title: string }) {
+  return request<SavedEvent>("/events", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function updateEvent(id: number, patch: Partial<EventInput>) {
+  return request<SavedEvent>(`/events/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+}
+
+/** Deletes the whole series for recurring events. */
+export function deleteEvent(id: number) {
+  return request<void>(`/events/${id}`, { method: "DELETE" });
 }
 
 // ---- Auth ------------------------------------------------------------------

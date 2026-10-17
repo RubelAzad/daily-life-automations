@@ -44,6 +44,7 @@ func main() {
 	projects := repository.ProjectRepository{DB: db}
 	taskService := services.TaskService{Tasks: repository.TaskRepository{DB: db}, Lists: taskLists, Projects: projects}
 	projectHandler := handlers.ProjectHandler{Projects: services.ProjectService{Projects: projects}}
+	calendarHandler := handlers.CalendarHandler{Calendar: services.CalendarService{Events: repository.CalendarEventRepository{DB: db}}}
 
 	authService := services.AuthService{
 		Users:      repository.UserRepository{DB: db},
@@ -84,6 +85,12 @@ func main() {
 	protected.POST("/projects/:id/milestones", projectHandler.CreateMilestone)
 	protected.PATCH("/milestones/:id", projectHandler.UpdateMilestone)
 	protected.DELETE("/milestones/:id", projectHandler.DeleteMilestone)
+
+	protected.GET("/events", calendarHandler.List)
+	protected.POST("/events", calendarHandler.Create)
+	protected.GET("/events/:id", calendarHandler.Get)
+	protected.PATCH("/events/:id", calendarHandler.Update)
+	protected.DELETE("/events/:id", calendarHandler.Delete)
 
 	log.Printf("LifeOS API listening on :%s", cfg.Port)
 	log.Fatal(router.Run(":" + cfg.Port))

@@ -51,6 +51,17 @@ export function fromDateInputEndOfDay(value: string): string | null {
   return value ? new Date(`${value}T23:59:59`).toISOString() : null;
 }
 
+/** "YYYY-MM-DD" of a Date in the viewer's time zone. */
+export function localDateKey(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** "09:30" in the viewer's time zone. */
+export function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
 /** Parses a calendar date "YYYY-MM-DD" as local midnight (not UTC). */
 function parseDate(value: string): Date {
   const [y, m, d] = value.split("-").map(Number);
