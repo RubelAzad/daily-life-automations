@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import AppHeader, { ErrorBanner } from "@/components/AppHeader";
-import { listNotes, listProjects, listTags, NOTE_KINDS, type Note, type NoteKind, type Project, type Tag } from "@/lib/api";
+import { listNotes, listProjects, listTags, NOTE_KINDS, searchDocuments, type Note, type NoteKind, type Project, type SearchResult, type Tag } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { formatDate, isPastDate } from "@/lib/format";
 import { useRequireUser } from "@/lib/useRequireUser";
@@ -30,6 +30,8 @@ export default function NotesView() {
   const selected: number | "new" | null = selectedParam === "new" ? "new" : selectedParam ? Number(selectedParam) : null;
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
+  // Matches inside attachments (PDF, Word, …) for the current search.
+  const [fileHits, setFileHits] = useState<{ q: string; hits: SearchResult[] }>({ q: "", hits: [] });
 
   const showError = useCallback((err: unknown) => setError(errorMessage(err)), []);
   const reload = useCallback(() => setVersion((v) => v + 1), []);
@@ -61,6 +63,19 @@ export default function NotesView() {
       cancelled = true;
     };
   }, [user, query, kind, tagId, archived, expiringSoon, version, showError]);
+
+  useEffect(() => {
+    if (!user || !query || archived) return;
+    let cancelled = false;
+    searchDocuments(query, 10)
+      .then((r) => {
+        if (!cancelled) setFileHits({ q: query, hits: r.filter((h) => h.file_id !== null) });
+      })
+      .catch(showError);
+    return () => {
+      cancelled = true;
+    };
+  }, [user, query, archived, version, showError]);
 
   useEffect(() => {
     if (!user) return;
@@ -177,6 +192,29 @@ export default function NotesView() {
               })}
               {total > notes.length && <li className="px-3 text-xs text-zinc-500">Showing {notes.length} of {total}. Refine your search to see more.</li>}
             </ul>
+          )}
+
+          {query && !archived && fileHits.q === query && fileHits.hits.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <h2 className="px-3 text-xs font-medium tracking-wide text-zinc-500 uppercase">Found inside files</h2>
+              <ul className="flex flex-col gap-1">
+                {fileHits.hits.map((h) => (
+                  <li key={h.file_id}>
+                    <button
+                      type="button"
+                      onClick={() => select(h.note_id)}
+                      className="flex w-full flex-col gap-0.5 rounded-md px-3 py-2 text-left hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium">📄 {h.file_name}</span>
+                        <span className="shrink-0 truncate text-xs text-zinc-500">in {h.note_title}</span>
+                      </span>
+                      <span className="line-clamp-2 text-xs text-zinc-500">{h.snippet}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </aside>
 

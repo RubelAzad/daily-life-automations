@@ -54,9 +54,14 @@ func main() {
 	todayHandler := handlers.TodayHandler{Today: services.TodayService{
 		Tasks: repository.TaskRepository{DB: db}, Calendar: calendarService, Reminders: reminders, Notes: notes,
 	}}
+	store := storage.LocalStore{Root: cfg.StorageDir}
+	searchService := services.SearchService{
+		Search: repository.SearchRepository{DB: db}, Notes: notes, Files: repository.FileRepository{DB: db}, Store: store,
+	}
+	searchHandler := handlers.SearchHandler{Service: searchService}
 	noteHandler := handlers.NoteHandler{Notes: services.NoteService{
 		Notes: notes, Files: repository.FileRepository{DB: db}, Projects: projects, Reminders: reminders,
-		Store: storage.LocalStore{Root: cfg.StorageDir}, MaxUploadBytes: cfg.MaxUploadBytes,
+		Store: store, MaxUploadBytes: cfg.MaxUploadBytes, Index: searchService,
 	}}
 	reminderHandler := handlers.ReminderHandler{
 		Reminders:     services.ReminderService{Reminders: reminders, Tasks: repository.TaskRepository{DB: db}, Events: events, Notes: notes},
@@ -70,7 +75,7 @@ func main() {
 		ai.Executor{
 			Tools: ai.BuiltinTools(ai.Deps{
 				Tasks: taskService, Calendar: calendarService, Notes: noteHandler.Notes, Reminders: reminderHandler.Reminders,
-				Today: todayHandler.Today,
+				Today: todayHandler.Today, Search: searchService,
 			}),
 			Actions:  repository.AIActionRepository{DB: db},
 			Settings: repository.SettingsRepository{DB: db},
@@ -80,7 +85,7 @@ func main() {
 	)
 	aiDeps := ai.Deps{
 		Tasks: taskService, Calendar: calendarService, Notes: noteHandler.Notes, Reminders: reminderHandler.Reminders,
-		Today: todayHandler.Today,
+		Today: todayHandler.Today, Search: searchService,
 	}
 	aiHandler := handlers.AIHandler{
 		AI:      aiService,
@@ -171,6 +176,7 @@ func main() {
 	protected.POST("/notes/:id/files", noteHandler.Upload)
 	protected.GET("/files/:id/download", noteHandler.Download)
 	protected.DELETE("/files/:id", noteHandler.DeleteFile)
+	protected.GET("/search", searchHandler.Search)
 	protected.GET("/tags", noteHandler.ListTags)
 	protected.PATCH("/tags/:id", noteHandler.UpdateTag)
 	protected.DELETE("/tags/:id", noteHandler.DeleteTag)

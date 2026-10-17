@@ -34,13 +34,27 @@ type Tag struct {
 }
 
 type File struct {
-	ID           uint64    `json:"id"`
-	UserID       uint64    `json:"-"`
-	NoteID       uint64    `json:"note_id"`
-	OriginalName string    `json:"name"`
-	StorageKey   string    `json:"-"`
-	ContentType  string    `json:"content_type"`
-	SizeBytes    int64     `json:"size_bytes"`
-	SHA256       string    `json:"sha256"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           uint64 `json:"id"`
+	UserID       uint64 `json:"-"`
+	NoteID       uint64 `json:"note_id"`
+	OriginalName string `json:"name"`
+	StorageKey   string `json:"-"`
+	ContentType  string `json:"content_type"`
+	SizeBytes    int64  `json:"size_bytes"`
+	SHA256       string `json:"sha256"`
+	// TextStatus is whether the file's text is searchable: pending,
+	// processing, ready, unsupported (e.g. images) or failed.
+	TextStatus string    `json:"text_status"`
+	TextError  *string   `json:"text_error"`
+	TextChars  *int      `json:"text_chars"`
+	CreatedAt  time.Time `json:"created_at"`
 }
+
+// File text statuses.
+const (
+	TextPending     = "pending"
+	TextProcessing  = "processing"
+	TextReady       = "ready"
+	TextUnsupported = "unsupported"
+	TextFailed      = "failed"
+)

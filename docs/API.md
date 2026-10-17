@@ -120,7 +120,7 @@ A morning plan and an evening wrap-up, written by the model from the user's day.
 
 | Risk | Tools | Needs approval |
 |---|---|---|
-| `read` | `get_today`, `list_tasks`, `list_events`, `search_notes` | Never |
+| `read` | `get_today`, `list_tasks`, `list_events`, `search_notes`, `search_documents` | Never |
 | `low` | `create_task`, `complete_task`, `reschedule_task`, `carry_forward_tasks`, `create_event`, `create_note`, `create_reminder` | When `ai_approval_mode` is `always` (the default) |
 | `high` | `delete_task` | Always. Sending, spending, deleting and booking can never skip approval. |
 
@@ -324,7 +324,7 @@ Notes cover module 9: notes, ideas, links, documents and receipts.
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/notes/:id/files` | `multipart/form-data` with a single field named `file`. Returns `201` with `{id, note_id, name, content_type, size_bytes, sha256, created_at}`. A note can have at most 50 files. |
+| POST | `/notes/:id/files` | `multipart/form-data` with a single field named `file`. Returns `201` with `{id, note_id, name, content_type, size_bytes, sha256, text_status, text_error, text_chars, created_at}`. A note can have at most 50 files. |
 | GET | `/files/:id/download` | Streams the file to its owner. Images and PDFs open in the browser; `?download=1` forces a download. Every other type is always downloaded. |
 | DELETE | `/files/:id` | `204`. Also removes it from disk. |
 
@@ -334,7 +334,21 @@ Notes cover module 9: notes, ideas, links, documents and receipts.
 - **Size:** at most `MAX_UPLOAD_MB` (default 20). Larger files get `413`.
 - **Storage names:** files are stored under random names, `storage/<user id>/<random hex>`. The uploaded name is only for display, is cut down to its base name (`../../x.pdf` becomes `x.pdf`) and is stripped of control characters.
 - **Download headers:** `X-Content-Type-Options: nosniff`, a sandboxing `Content-Security-Policy` and `Cache-Control: private, no-store`.
-- **Not yet:** virus scanning, and searching inside file contents. Searching inside PDFs comes with the AI knowledge search in Step 2.4.
+- **Not yet:** virus scanning.
+
+**Searchable text:** after an upload, the file's text is extracted in the background so it can be [searched](#search). `text_status` is `pending` → `processing` → `ready`, or `unsupported` (images, `.doc`, `.xls`, `.zip`) or `failed` (unreadable or password-protected), with a reason in `text_error`. `text_chars` is the amount of text found. Text is read from `.pdf .docx .xlsx .pptx .txt .md .csv`, with limits on output (500 000 characters), PDF pages and decompressed size, so a hostile file can't exhaust the server. Images need text recognition, which isn't done yet.
+
+## Search
+
+Personal knowledge search across notes and the text inside their files (module 9). Also used by the assistant's `search_documents` tool.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/search` | Query: `q` (required, ≤ 200 characters), `limit` (1–20, default 20). Returns `{data: [{note_id, note_title, note_kind, file_id, file_name, snippet, score}]}`, best first: the best-matching passage of each note (`file_id` null) or file. Archived notes are left out. |
+
+- **Matching:** MySQL full-text search over passages of about 1 500 characters. Words of 3+ letters match, also as word starts (`insur` finds "insurance"); common words are ignored, and passages matching more words rank higher. Search operators in `q` are stripped. A query with no such words (e.g. `42`) falls back to a plain substring match.
+- **Freshness:** a note is indexed when it's saved; files a few seconds after upload. The worker catches anything missed (e.g. after a crash) and indexes files uploaded before this feature.
+- **Privacy:** results only ever include the signed-in user's notes and files.
 
 ## Task lists
 
