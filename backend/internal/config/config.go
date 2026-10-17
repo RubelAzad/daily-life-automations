@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -14,6 +15,9 @@ type Config struct {
 	Port      string
 	WebOrigin string
 	DB        DBConfig
+	// StorageDir holds uploaded files (local development storage).
+	StorageDir     string
+	MaxUploadBytes int64
 }
 
 type DBConfig struct {
@@ -66,6 +70,13 @@ func Load() (Config, error) {
 	if cfg.DB.Name == "" || cfg.DB.User == "" {
 		return cfg, fmt.Errorf("DB_NAME and DB_USER are required")
 	}
+
+	cfg.StorageDir = getEnv("STORAGE_DIR", "storage")
+	maxMB, err := strconv.Atoi(getEnv("MAX_UPLOAD_MB", "20"))
+	if err != nil || maxMB < 1 || maxMB > 500 {
+		return cfg, fmt.Errorf("MAX_UPLOAD_MB must be a number between 1 and 500")
+	}
+	cfg.MaxUploadBytes = int64(maxMB) << 20
 	return cfg, nil
 }
 

@@ -18,17 +18,19 @@ type ReminderFilter struct {
 	Statuses []string
 	TaskID   *uint64
 	EventID  *uint64
+	NoteID   *uint64
 	Limit    int
 	Offset   int
 }
 
 const reminderSelect = `
-	SELECT r.id, r.user_id, r.task_id, r.event_id, r.title, r.note, r.offset_minutes, r.remind_at, r.occurs_at,
+	SELECT r.id, r.user_id, r.task_id, r.event_id, r.note_id, r.title, r.note, r.offset_minutes, r.remind_at, r.occurs_at,
 	       r.follow_up_minutes, r.max_follow_ups, r.follow_ups_sent, r.status, r.last_sent_at, r.created_at, r.updated_at,
-	       COALESCE(r.title, t.title, e.title, '')
+	       COALESCE(r.title, t.title, e.title, nt.title, '')
 	  FROM reminders r
 	  LEFT JOIN tasks t ON t.id = r.task_id
-	  LEFT JOIN calendar_events e ON e.id = r.event_id`
+	  LEFT JOIN calendar_events e ON e.id = r.event_id
+	  LEFT JOIN notes nt ON nt.id = r.note_id`
 
 // List orders by next fire time; inactive reminders (no remind_at) last.
 func (r ReminderRepository) List(ctx context.Context, userID uint64, f ReminderFilter) ([]models.Reminder, int, error) {
@@ -47,6 +49,10 @@ func (r ReminderRepository) List(ctx context.Context, userID uint64, f ReminderF
 	if f.EventID != nil {
 		where = append(where, "r.event_id = ?")
 		args = append(args, *f.EventID)
+	}
+	if f.NoteID != nil {
+		where = append(where, "r.note_id = ?")
+		args = append(args, *f.NoteID)
 	}
 	whereSQL := strings.Join(where, " AND ")
 
@@ -91,6 +97,10 @@ func (r ReminderRepository) ListRelativeForEvent(ctx context.Context, eventID ui
 	return r.listWhere(ctx, `r.event_id = ? AND r.offset_minutes IS NOT NULL AND r.status <> 'cancelled'`, eventID)
 }
 
+func (r ReminderRepository) ListRelativeForNote(ctx context.Context, noteID uint64) ([]models.Reminder, error) {
+	return r.listWhere(ctx, `r.note_id = ? AND r.offset_minutes IS NOT NULL AND r.status <> 'cancelled'`, noteID)
+}
+
 func (r ReminderRepository) listWhere(ctx context.Context, cond string, args ...any) ([]models.Reminder, error) {
 	rows, err := r.DB.QueryContext(ctx, reminderSelect+` WHERE `+cond+` ORDER BY r.id`, args...)
 	if err != nil {
@@ -110,10 +120,10 @@ func (r ReminderRepository) listWhere(ctx context.Context, cond string, args ...
 
 func (r ReminderRepository) Create(ctx context.Context, rem models.Reminder) (models.Reminder, error) {
 	res, err := r.DB.ExecContext(ctx,
-		`INSERT INTO reminders (user_id, task_id, event_id, title, note, offset_minutes, remind_at, occurs_at,
+		`INSERT INTO reminders (user_id, task_id, event_id, note_id, title, note, offset_minutes, remind_at, occurs_at,
 		                        follow_up_minutes, max_follow_ups, follow_ups_sent, status)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		rem.UserID, rem.TaskID, rem.EventID, rem.Title, rem.Note, rem.OffsetMinutes, utcPtr(rem.RemindAt), utcPtr(rem.OccursAt),
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		rem.UserID, rem.TaskID, rem.EventID, rem.NoteID, rem.Title, rem.Note, rem.OffsetMinutes, utcPtr(rem.RemindAt), utcPtr(rem.OccursAt),
 		rem.FollowUpMinutes, rem.MaxFollowUps, rem.FollowUpsSent, rem.Status)
 	if err != nil {
 		return models.Reminder{}, err
@@ -183,7 +193,7 @@ func (r ReminderRepository) LockDue(ctx context.Context, id uint64, now time.Tim
 
 func scanReminder(row rowScanner) (models.Reminder, error) {
 	var rem models.Reminder
-	err := row.Scan(&rem.ID, &rem.UserID, &rem.TaskID, &rem.EventID, &rem.Title, &rem.Note, &rem.OffsetMinutes,
+	err := row.Scan(&rem.ID, &rem.UserID, &rem.TaskID, &rem.EventID, &rem.NoteID, &rem.Title, &rem.Note, &rem.OffsetMinutes,
 		&rem.RemindAt, &rem.OccursAt, &rem.FollowUpMinutes, &rem.MaxFollowUps, &rem.FollowUpsSent, &rem.Status,
 		&rem.LastSentAt, &rem.CreatedAt, &rem.UpdatedAt, &rem.SubjectTitle)
 	rem.SetKind()

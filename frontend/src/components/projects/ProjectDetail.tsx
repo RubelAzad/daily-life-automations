@@ -14,11 +14,13 @@ import {
   getProject,
   listProjects,
   listTaskLists,
+  listNotes,
   listTasks,
   PROJECT_STATUSES,
   updateMilestone,
   updateProject,
   type Milestone,
+  type Note,
   type Project,
   type ProjectStatus,
   type Task,
@@ -192,6 +194,8 @@ export default function ProjectDetail({ id }: { id: number }) {
 
       {project && (
         <>
+          <ProjectNotes projectId={project.id} onError={showError} />
+
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Milestones & tasks</h2>
             <label className="flex items-center gap-2 text-sm">
@@ -227,6 +231,41 @@ export default function ProjectDetail({ id }: { id: number }) {
         </>
       )}
     </div>
+  );
+}
+
+/** Notes, links and documents attached to the project (managed on /notes). */
+function ProjectNotes({ projectId, onError }: { projectId: number; onError: (err: unknown) => void }) {
+  const [notes, setNotes] = useState<Note[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    listNotes({ project_id: projectId, per_page: 20 })
+      .then((r) => {
+        if (!cancelled) setNotes(r.data);
+      })
+      .catch(onError);
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, onError]);
+
+  if (!notes?.length) return null;
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="text-lg font-semibold">Notes & documents</h2>
+      <ul className="flex flex-wrap gap-2">
+        {notes.map((n) => (
+          <li key={n.id}>
+            <Link href={`/notes?id=${n.id}`} className="flex items-center gap-2 rounded-md border border-zinc-200 px-3 py-1.5 text-sm hover:border-zinc-400 dark:border-zinc-800">
+              {n.pinned && "★ "}
+              {n.title}
+              {n.file_count > 0 && <span className="text-xs text-zinc-500">📎 {n.file_count}</span>}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

@@ -13,6 +13,7 @@ import (
 	"lifeos-ai/backend/internal/models"
 	"lifeos-ai/backend/internal/repository"
 	"lifeos-ai/backend/internal/services"
+	"lifeos-ai/backend/internal/storage"
 )
 
 func main() {
@@ -47,8 +48,13 @@ func main() {
 	events := repository.CalendarEventRepository{DB: db}
 	reminders := repository.ReminderRepository{DB: db}
 	calendarHandler := handlers.CalendarHandler{Calendar: services.CalendarService{Events: events, Reminders: reminders}}
+	notes := repository.NoteRepository{DB: db}
+	noteHandler := handlers.NoteHandler{Notes: services.NoteService{
+		Notes: notes, Files: repository.FileRepository{DB: db}, Projects: projects, Reminders: reminders,
+		Store: storage.LocalStore{Root: cfg.StorageDir}, MaxUploadBytes: cfg.MaxUploadBytes,
+	}}
 	reminderHandler := handlers.ReminderHandler{
-		Reminders:     services.ReminderService{Reminders: reminders, Tasks: repository.TaskRepository{DB: db}, Events: events},
+		Reminders:     services.ReminderService{Reminders: reminders, Tasks: repository.TaskRepository{DB: db}, Events: events, Notes: notes},
 		Notifications: services.NotificationService{Notifications: repository.NotificationRepository{DB: db}},
 	}
 
@@ -97,6 +103,18 @@ func main() {
 	protected.GET("/events/:id", calendarHandler.Get)
 	protected.PATCH("/events/:id", calendarHandler.Update)
 	protected.DELETE("/events/:id", calendarHandler.Delete)
+
+	protected.GET("/notes", noteHandler.List)
+	protected.POST("/notes", noteHandler.Create)
+	protected.GET("/notes/:id", noteHandler.Get)
+	protected.PATCH("/notes/:id", noteHandler.Update)
+	protected.DELETE("/notes/:id", noteHandler.Delete)
+	protected.POST("/notes/:id/files", noteHandler.Upload)
+	protected.GET("/files/:id/download", noteHandler.Download)
+	protected.DELETE("/files/:id", noteHandler.DeleteFile)
+	protected.GET("/tags", noteHandler.ListTags)
+	protected.PATCH("/tags/:id", noteHandler.UpdateTag)
+	protected.DELETE("/tags/:id", noteHandler.DeleteTag)
 
 	protected.GET("/reminders", reminderHandler.List)
 	protected.POST("/reminders", reminderHandler.Create)

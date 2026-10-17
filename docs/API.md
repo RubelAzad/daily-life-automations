@@ -140,6 +140,7 @@ A project groups tasks toward a goal. It's separate from lists: a task can be in
 | `standalone` | `title`, `remind_at` (future), optional `note` | Fires once |
 | `task` | `task_id`, plus `offset_minutes` (minutes before `due_at`, 0–43 200) **or** a fixed `remind_at` | Not delivered if the task is completed or cancelled by then (its status becomes `cancelled`). Offset reminders move when the due date changes, are inactive (`remind_at: null`) while there's no upcoming due date, and are copied to the next occurrence of a recurring task. |
 | `event` | `event_id`, `offset_minutes` (required) | Fires before **each** occurrence of a repeating event, then re-arms for the next one. Moves when the event changes. |
+| `note` | `note_id`, `offset_minutes` (required; e.g. 43 200 = 30 days) | Expiry reminder before the note's `expires_on`. The expiry is treated as 09:00 UTC on that date until Step 1.8 adds time zones. Moves when `expires_on` changes. Not delivered if the note is archived or its expiry date is removed. |
 
 **Follow-ups** (tasks only): `follow_up_minutes` (5–10 080) and `max_follow_ups` (1–10, default 3). After the first reminder, LifeOS keeps reminding every `follow_up_minutes` while the task is still open, up to the maximum. `follow_ups_sent` counts them.
 
@@ -159,6 +160,42 @@ The worker (`go run ./cmd/worker`) creates notifications. They are in-app only f
 **Delivery guarantees:** each reminder is claimed with `SELECT … FOR UPDATE SKIP LOCKED` in its own transaction. Each notification carries the unique key `reminder:<id>:<fire time>` and is inserted with `INSERT IGNORE`. Running several workers, or rerunning one after a crash, never duplicates a notification.
 
 **Not yet:** quiet hours, escalation to other channels, and location-based reminders. Quiet hours come with user settings in Step 1.8; the other channels with integrations in Phase 6.
+
+## Notes
+
+Notes cover module 9: notes, ideas, links, documents and receipts.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/notes` | Query: `q` (searches title, text, URL, tag names and attachment file names), `kind`, `tag_id`, `project_id`, `pinned=true\|false`, `archived=true` (shows the archive; the default list excludes it), `expiring_within_days` (also includes notes that have already expired; sorts by expiry), `sort` (`-updated_at` default with pinned first, `title`, `expires_on`), `page`, `per_page`. Each note includes `tags` and `file_count`. |
+| POST | `/notes` | `title` (required, ≤ 255), `body` (≤ 100 000), `kind` (`note`/`idea`/`link`/`document`/`receipt`; default `note`), `url` (http/https only; required for `link`), `pinned`, `expires_on` (`YYYY-MM-DD`), `project_id`, `tags` (list of names) |
+| GET | `/notes/:id` | Includes `files` |
+| PATCH | `/notes/:id` | Any POST field, plus `archived`. `tags` **replaces** the set; `[]` clears it. Changing `expires_on` moves the note's expiry reminders. |
+| DELETE | `/notes/:id` | `204`. Also deletes its files, from disk too, and its reminders. |
+
+**Tags:** names are trimmed, de-duplicated without regard to case, at most 50 characters, and can't contain `,` or `#`. A note can have at most 20. Unknown names are created when you use them, so "Documents" and "documents" are the same tag.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/tags` | Each tag includes `note_count`, which leaves out archived notes. |
+| PATCH | `/tags/:id` | `name`, `color`. `422` if the new name already exists. |
+| DELETE | `/tags/:id` | `204`. Removes the tag from every note. |
+
+## Files (attachments)
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/notes/:id/files` | `multipart/form-data` with a single field named `file`. Returns `201` with `{id, note_id, name, content_type, size_bytes, sha256, created_at}`. A note can have at most 50 files. |
+| GET | `/files/:id/download` | Streams the file to its owner. Images and PDFs open in the browser; `?download=1` forces a download. Every other type is always downloaded. |
+| DELETE | `/files/:id` | `204`. Also removes it from disk. |
+
+**Upload safety:**
+- **Allowed extensions:** `.pdf .png .jpg .jpeg .gif .webp .txt .md .csv .docx .xlsx .pptx .doc .xls .zip`. Everything else is rejected (`422`), including HTML, SVG, scripts and executables.
+- **Content must match the extension:** the first bytes are checked, so an HTML file renamed to `.pdf` is rejected.
+- **Size:** at most `MAX_UPLOAD_MB` (default 20). Larger files get `413`.
+- **Storage names:** files are stored under random names, `storage/<user id>/<random hex>`. The uploaded name is only for display, is cut down to its base name (`../../x.pdf` becomes `x.pdf`) and is stripped of control characters.
+- **Download headers:** `X-Content-Type-Options: nosniff`, a sandboxing `Content-Security-Policy` and `Cache-Control: private, no-store`.
+- **Not yet:** virus scanning, and searching inside file contents. Searching inside PDFs comes with the AI knowledge search in Step 2.4.
 
 ## Task lists
 

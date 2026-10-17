@@ -51,6 +51,13 @@ export function fromDateInputEndOfDay(value: string): string | null {
   return value ? new Date(`${value}T23:59:59`).toISOString() : null;
 }
 
+/** "820 B", "14 KB", "3.2 MB". */
+export function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 /** "just now", "5 min ago", "3 h ago", "2 d ago". */
 export function timeAgo(iso: string, now = new Date()): string {
   const minutes = Math.round((now.getTime() - new Date(iso).getTime()) / 60_000);

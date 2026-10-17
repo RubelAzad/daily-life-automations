@@ -14,8 +14,8 @@ All 20 modules from [DAILY_LIFE_MODULES.md](DAILY_LIFE_MODULES.md), split into s
 | 1.4 | Projects, milestones, progress | 2 | ✅ Done |
 | 1.5 | Calendar events CRUD, conflict detection | 3 | ✅ Done |
 | 1.6 | Reminders, in-app notifications, first worker process | 4 | ✅ Done |
-| 1.7 | Notes, tags, file uploads (local storage) | 9 | ⬜ Next |
-| 1.8 | User settings: time zone, quiet hours, approval preferences | 20 | ⬜ |
+| 1.7 | Notes, tags, file uploads (local storage) | 9 | ✅ Done |
+| 1.8 | User settings: time zone, quiet hours, approval preferences | 20 | ⬜ Next |
 | 1.9 | Dashboard "Today" view, carry-forward of unfinished tasks | 1 | ⬜ |
 
 ## Phase 2 — AI assistant

@@ -29,6 +29,8 @@ copy .env.example .env   # then fill in DB_PASSWORD
 go run ./cmd/api
 ```
 
+Uploaded files are stored in `backend/storage/` (set `STORAGE_DIR` to change it; it's git-ignored). `MAX_UPLOAD_MB` limits the size of each file (default 20). Back this folder up together with the database, because notes refer to the files in it.
+
 DB settings are separate variables (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`) and the DSN is built in code, so passwords with `@`, `#`, `/` need no URL-escaping. Quote the password in `.env` if it contains `#`.
 
 Check: http://localhost:8080/api/v1/health → `{"database":"connected","status":"ok"}`

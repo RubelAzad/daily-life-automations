@@ -13,7 +13,7 @@ const TABS = [
   { value: "sent", label: "Sent" },
 ];
 
-const KIND_LINK: Record<Reminder["kind"], string> = { task: "/tasks", event: "/calendar", standalone: "" };
+const KIND_LINK: Record<Reminder["kind"], string> = { task: "/tasks", event: "/calendar", note: "/notes", standalone: "" };
 
 export default function RemindersView() {
   const { user, error: authError } = useRequireUser();
@@ -123,7 +123,7 @@ export default function RemindersView() {
               <span className="mt-0.5 rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600 capitalize dark:bg-zinc-800 dark:text-zinc-300">{r.kind}</span>
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                 {KIND_LINK[r.kind] ? (
-                  <Link href={KIND_LINK[r.kind]} className="font-medium wrap-break-word underline-offset-2 hover:underline">
+                  <Link href={r.note_id ? `/notes?id=${r.note_id}` : KIND_LINK[r.kind]} className="font-medium wrap-break-word underline-offset-2 hover:underline">
                     {r.subject_title}
                   </Link>
                 ) : (
@@ -134,7 +134,7 @@ export default function RemindersView() {
                   {r.status === "sent" && r.last_sent_at
                     ? `Sent ${timeAgo(r.last_sent_at)}`
                     : r.remind_at
-                      ? `${formatDue(r.remind_at)}${r.offset_minutes !== null ? ` · ${formatOffset(r.offset_minutes, r.kind === "event" ? "At start" : "At due time").toLowerCase()}` : ""}`
+                      ? `${formatDue(r.remind_at)}${r.offset_minutes !== null ? ` · ${formatOffset(r.offset_minutes, r.kind === "event" ? "At start" : r.kind === "note" ? "On expiry day" : "At due time").toLowerCase()}` : ""}`
                       : "Waiting for an upcoming due date"}
                   {r.follow_up_minutes && ` · follow-ups ${r.follow_ups_sent}/${r.max_follow_ups}`}
                 </span>

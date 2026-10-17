@@ -15,7 +15,8 @@ type Reminder struct {
 	UserID  uint64  `json:"-"`
 	TaskID  *uint64 `json:"task_id"`
 	EventID *uint64 `json:"event_id"`
-	Title   *string `json:"title"` // standalone reminders only
+	NoteID  *uint64 `json:"note_id"` // fires before the note's expires_on
+	Title   *string `json:"title"`   // standalone reminders only
 	Note    *string `json:"note"`
 	// OffsetMinutes is how long before the task's due time or the event's
 	// start to fire. nil means remind_at is a fixed time.
@@ -33,7 +34,7 @@ type Reminder struct {
 	UpdatedAt       time.Time  `json:"updated_at"`
 
 	// Derived.
-	Kind         string `json:"kind"`          // "standalone", "task" or "event"
+	Kind         string `json:"kind"`          // "standalone", "task", "event" or "note"
 	SubjectTitle string `json:"subject_title"` // the reminder, task or event title
 }
 
@@ -43,6 +44,8 @@ func (r *Reminder) SetKind() {
 		r.Kind = "task"
 	case r.EventID != nil:
 		r.Kind = "event"
+	case r.NoteID != nil:
+		r.Kind = "note"
 	default:
 		r.Kind = "standalone"
 	}

@@ -51,6 +51,40 @@ func NextEventReminder(e models.CalendarEvent, offsetMinutes int, now time.Time)
 	return &at, start
 }
 
+// noteExpiryHourUTC is the time of day an expiry date "happens".
+// TODO(step 1.8): use 09:00 in the user's time zone.
+const noteExpiryHourUTC = 9
+
+// NoteExpiryInstant is the moment a note's expiry date is reached.
+func NoteExpiryInstant(d models.Date) time.Time {
+	return d.Time.UTC().Truncate(24 * time.Hour).Add(noteExpiryHourUTC * time.Hour)
+}
+
+// NoteReminderTime returns when an expiry reminder fires and the expiry
+// moment it refers to; inactive when there is no upcoming expiry.
+func NoteReminderTime(expiresOn *models.Date, offsetMinutes int, now time.Time) (remindAt, occursAt *time.Time) {
+	if expiresOn == nil {
+		return nil, nil
+	}
+	expiry := NoteExpiryInstant(*expiresOn)
+	return TaskReminderTime(&expiry, offsetMinutes, now)
+}
+
+func rescheduleNoteReminders(ctx context.Context, reminders repository.ReminderRepository, n models.Note, now time.Time) error {
+	rems, err := reminders.ListRelativeForNote(ctx, n.ID)
+	if err != nil {
+		return err
+	}
+	for _, r := range rems {
+		r.RemindAt, r.OccursAt = NoteReminderTime(n.ExpiresOn, *r.OffsetMinutes, now)
+		r.Status = models.ReminderScheduled
+		if err := reminders.Update(ctx, r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // rescheduleTaskReminders moves a task's offset-based reminders after its
 // due time changed, re-arming any that already fired.
 func rescheduleTaskReminders(ctx context.Context, reminders repository.ReminderRepository, t models.Task, now time.Time) error {

@@ -5,6 +5,7 @@
 
 # Go
 backend/bin/
+backend/storage/
 *.exe
 
 # Node / Next.js

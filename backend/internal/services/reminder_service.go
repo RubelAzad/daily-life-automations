@@ -24,6 +24,7 @@ type ReminderService struct {
 	Reminders repository.ReminderRepository
 	Tasks     repository.TaskRepository
 	Events    repository.CalendarEventRepository
+	Notes     repository.NoteRepository
 	// Now is overridable for tests; defaults to time.Now.
 	Now func() time.Time
 }
@@ -39,6 +40,7 @@ type ListRemindersInput struct {
 	Status  string // comma-separated; default "scheduled"
 	TaskID  string
 	EventID string
+	NoteID  string
 	Page    string
 	PerPage string
 }
@@ -52,6 +54,7 @@ type CreateReminderInput struct {
 	RemindAt        *string `json:"remind_at"`
 	TaskID          *uint64 `json:"task_id"`
 	EventID         *uint64 `json:"event_id"`
+	NoteID          *uint64 `json:"note_id"` // offset_minutes before the note's expires_on
 	OffsetMinutes   *int    `json:"offset_minutes"`
 	FollowUpMinutes *int    `json:"follow_up_minutes"` // tasks only: repeat until done
 	MaxFollowUps    *int    `json:"max_follow_ups"`
@@ -71,6 +74,7 @@ func (s ReminderService) List(ctx context.Context, userID uint64, in ListReminde
 	f := repository.ReminderFilter{
 		TaskID:  parseIDParam(&c, "task_id", in.TaskID),
 		EventID: parseIDParam(&c, "event_id", in.EventID),
+		NoteID:  parseIDParam(&c, "note_id", in.NoteID),
 	}
 	status := in.Status
 	if status == "" {
@@ -101,12 +105,13 @@ func (s ReminderService) Create(ctx context.Context, userID uint64, in CreateRem
 		UserID:        userID,
 		TaskID:        in.TaskID,
 		EventID:       in.EventID,
+		NoteID:        in.NoteID,
 		Note:          optionalText(in.Note),
 		OffsetMinutes: in.OffsetMinutes,
 		Status:        models.ReminderScheduled,
 	}
-	if in.TaskID != nil && in.EventID != nil {
-		c.fail("event_id", "a reminder belongs to a task or an event, not both")
+	if countSet(in.TaskID, in.EventID, in.NoteID) > 1 {
+		c.fail("event_id", "a reminder belongs to one task, event or note, not several")
 		return models.Reminder{}, c.err()
 	}
 	if in.Title != nil {
@@ -292,6 +297,35 @@ func (s ReminderService) schedule(ctx context.Context, c *checker, r *models.Rem
 		if r.RemindAt == nil {
 			c.fail("offset_minutes", "the event has no upcoming occurrence for this reminder")
 		}
+	case r.NoteID != nil:
+		r.Kind = "note"
+		if r.Title != nil {
+			c.fail("title", "only standalone reminders have their own title")
+		}
+		if fixed != nil {
+			c.fail("remind_at", "note reminders use offset_minutes before the expiry date")
+			return nil
+		}
+		if r.OffsetMinutes == nil {
+			c.fail("offset_minutes", "is required for note reminders")
+			return nil
+		}
+		note, err := s.Notes.Get(ctx, r.UserID, *r.NoteID)
+		if errors.Is(err, repository.ErrNotFound) {
+			c.fail("note_id", "note not found")
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if note.ExpiresOn == nil {
+			c.fail("offset_minutes", "the note has no expiry date")
+			return nil
+		}
+		r.RemindAt, r.OccursAt = NoteReminderTime(note.ExpiresOn, *r.OffsetMinutes, now)
+		if r.RemindAt == nil {
+			c.fail("offset_minutes", "the note has already expired")
+		}
 	default:
 		r.Kind = "standalone"
 		if r.Title == nil {
@@ -308,6 +342,16 @@ func (s ReminderService) schedule(ctx context.Context, c *checker, r *models.Rem
 		requireFuture(c, "remind_at", fixed, now)
 	}
 	return nil
+}
+
+func countSet(ids ...*uint64) int {
+	n := 0
+	for _, id := range ids {
+		if id != nil {
+			n++
+		}
+	}
+	return n
 }
 
 func requireFuture(c *checker, field string, t *time.Time, now time.Time) {

@@ -22,11 +22,13 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  // FormData bodies (uploads) must let the browser set the multipart boundary.
+  const isForm = typeof FormData !== "undefined" && init.body instanceof FormData;
   const response = await fetch(`${API_BASE}${path}`, {
     cache: "no-store",
     credentials: "include", // send the HttpOnly session cookie
     ...init,
-    headers: { "Content-Type": "application/json", ...init.headers },
+    headers: isForm ? init.headers : { "Content-Type": "application/json", ...init.headers },
   });
 
   if (response.status === 204) return undefined as T;
@@ -351,6 +353,7 @@ export type Reminder = {
   id: number;
   task_id: number | null;
   event_id: number | null;
+  note_id: number | null; // fires before the note's expires_on
   title: string | null; // standalone only
   note: string | null;
   /** Minutes before the task's due time / event start; null for a fixed time. */
@@ -363,7 +366,7 @@ export type Reminder = {
   follow_ups_sent: number;
   status: ReminderStatus;
   last_sent_at: string | null;
-  kind: "standalone" | "task" | "event";
+  kind: "standalone" | "task" | "event" | "note";
   subject_title: string;
 };
 
@@ -373,6 +376,7 @@ export type ReminderInput = {
   remind_at?: string | null;
   task_id?: number;
   event_id?: number;
+  note_id?: number;
   offset_minutes?: number | null;
   follow_up_minutes?: number | null;
   max_follow_ups?: number;
@@ -392,7 +396,7 @@ export type AppNotification = {
   created_at: string;
 };
 
-export function listReminders(query: { status?: string; task_id?: number; event_id?: number; per_page?: number } = {}) {
+export function listReminders(query: { status?: string; task_id?: number; event_id?: number; note_id?: number; per_page?: number } = {}) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
     if (value !== undefined && value !== "") params.set(key, String(value));
@@ -429,6 +433,119 @@ export function markNotificationRead(id: number) {
 
 export function markAllNotificationsRead() {
   return request<{ data: { marked: number } }>("/notifications/read-all", { method: "POST" });
+}
+
+// ---- Notes, tags & files ---------------------------------------------------
+
+export const NOTE_KINDS = ["note", "idea", "link", "document", "receipt"] as const;
+export type NoteKind = (typeof NOTE_KINDS)[number];
+
+export type Tag = { id: number; name: string; color: string | null; note_count: number };
+
+export type NoteFile = {
+  id: number;
+  note_id: number;
+  name: string;
+  content_type: string;
+  size_bytes: number;
+  sha256: string;
+  created_at: string;
+};
+
+export type Note = {
+  id: number;
+  project_id: number | null;
+  title: string;
+  body: string | null;
+  kind: NoteKind;
+  url: string | null;
+  pinned: boolean;
+  archived: boolean;
+  expires_on: string | null; // "YYYY-MM-DD"
+  created_at: string;
+  updated_at: string;
+  tags: Tag[];
+  file_count: number;
+  /** Only present on getNote. */
+  files?: NoteFile[];
+};
+
+export type NoteInput = {
+  title: string;
+  body: string | null;
+  kind: NoteKind;
+  url: string | null;
+  pinned: boolean;
+  archived: boolean;
+  expires_on: string | null;
+  project_id: number | null;
+  /** Replaces the note's tags; unknown names are created. */
+  tags: string[];
+};
+
+export type NoteQuery = {
+  q?: string;
+  kind?: NoteKind;
+  tag_id?: number;
+  project_id?: number;
+  pinned?: boolean;
+  archived?: boolean;
+  expiring_within_days?: number;
+  sort?: "-updated_at" | "title" | "expires_on";
+  page?: number;
+  per_page?: number;
+};
+
+export function listNotes(query: NoteQuery = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== "") params.set(key, String(value));
+  }
+  return request<{ data: Note[]; meta: PageMeta }>(`/notes?${params}`);
+}
+
+export async function getNote(id: number) {
+  return (await request<{ data: Note }>(`/notes/${id}`)).data;
+}
+
+export async function createNote(input: Partial<NoteInput> & { title: string }) {
+  return (await request<{ data: Note }>("/notes", { method: "POST", body: JSON.stringify(input) })).data;
+}
+
+export async function updateNote(id: number, patch: Partial<NoteInput>) {
+  return (await request<{ data: Note }>(`/notes/${id}`, { method: "PATCH", body: JSON.stringify(patch) })).data;
+}
+
+/** Also deletes its attachments. */
+export function deleteNote(id: number) {
+  return request<void>(`/notes/${id}`, { method: "DELETE" });
+}
+
+export async function uploadFile(noteId: number, file: File) {
+  const form = new FormData();
+  form.append("file", file);
+  return (await request<{ data: NoteFile }>(`/notes/${noteId}/files`, { method: "POST", body: form })).data;
+}
+
+export function deleteFile(id: number) {
+  return request<void>(`/files/${id}`, { method: "DELETE" });
+}
+
+/** Opens images/PDFs in the browser; pass download to always save the file. */
+export function fileUrl(id: number, download = false) {
+  return `${API_BASE}/files/${id}/download${download ? "?download=1" : ""}`;
+}
+
+export async function listTags() {
+  return (await request<{ data: Tag[] }>("/tags")).data;
+}
+
+export async function updateTag(id: number, patch: { name?: string; color?: string | null }) {
+  return (await request<{ data: Tag }>(`/tags/${id}`, { method: "PATCH", body: JSON.stringify(patch) })).data;
+}
+
+export function deleteTag(id: number) {
+  return request<void>(`/tags/${id}`, { method: "DELETE" });
 }
 
 // ---- Auth ------------------------------------------------------------------
