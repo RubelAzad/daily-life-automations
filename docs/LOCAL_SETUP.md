@@ -33,6 +33,18 @@ DB settings are separate variables (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, 
 
 Check: http://localhost:8080/api/v1/health → `{"database":"connected","status":"ok"}`
 
+## Worker (reminders)
+
+The worker is a separate process that turns due reminders into notifications. Without it, reminders are saved but never delivered.
+
+```powershell
+cd backend
+go run ./cmd/worker            # checks every 30 s (set WORKER_INTERVAL_SECONDS to change it)
+go run ./cmd/worker -once      # process whatever is due now, then exit
+```
+
+It's safe to run more than one worker, or to restart one at any time: each reminder is claimed with a row lock, and each notification has a unique key, so nothing is delivered twice.
+
 ## Frontend
 
 ```powershell
@@ -43,6 +55,14 @@ npm run dev
 ```
 
 Open http://localhost:3000. The home page shows the live API/database status and sign-in state; create an account at `/register`. Restart `npm run dev` after changing `.env.local`.
+
+## Daily run order
+
+1. MySQL running (the `MySQL80` service starts with Windows).
+2. `cd backend; go run ./cmd/migrate` (after pulling new changes).
+3. Terminal 1: `cd backend; go run ./cmd/api`
+4. Terminal 2: `cd backend; go run ./cmd/worker`
+5. Terminal 3: `cd frontend; npm run dev`, then open http://localhost:3000
 
 ## Notes
 

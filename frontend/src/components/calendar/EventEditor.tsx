@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import RemindersPanel from "@/components/RemindersPanel";
 import {
   createEvent,
+  createReminder,
   deleteEvent,
   getEvent,
   RECURRENCE_FREQUENCIES,
@@ -12,7 +14,7 @@ import {
   type EventOccurrence,
   type RecurrenceFrequency,
 } from "@/lib/api";
-import { fromDateInputEndOfDay, fromLocalInput, toDateInput, toLocalInput } from "@/lib/format";
+import { formatOffset, fromDateInputEndOfDay, fromLocalInput, toDateInput, toLocalInput } from "@/lib/format";
 
 /** "new" pre-fills the given local day (YYYY-MM-DD); "edit" loads the series. */
 export type EditorTarget = { kind: "new"; day: string } | { kind: "edit"; id: number };
@@ -76,6 +78,8 @@ function EventForm({
   const [frequency, setFrequency] = useState<RecurrenceFrequency | "none">(event?.recurrence?.frequency ?? "none");
   const [interval, setRepeatEvery] = useState(event?.recurrence?.interval ?? 1);
   const [until, setUntil] = useState(toDateInput(event?.recurrence?.until ?? null));
+  // New events only; existing events manage reminders with RemindersPanel.
+  const [remind, setRemind] = useState("15");
   const [saving, setSaving] = useState(false);
 
   async function onSubmit(e: FormEvent) {
@@ -93,6 +97,10 @@ function EventForm({
     setSaving(true);
     try {
       const saved = event ? await updateEvent(event.id, input) : await createEvent(input);
+      if (!event && remind !== "none") {
+        // The event is saved either way; a failed reminder is reported separately.
+        await createReminder({ event_id: saved.data.id, offset_minutes: Number(remind) }).catch(onError);
+      }
       onSaved(saved.conflicts);
     } catch (err) {
       onError(err);
@@ -202,6 +210,22 @@ function EventForm({
       </fieldset>
 
       <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="Notes" aria-label="Notes" className={control} />
+
+      {event ? (
+        <RemindersPanel eventId={event.id} onError={onError} />
+      ) : (
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-zinc-500">Remind me</span>
+          <select value={remind} onChange={(e) => setRemind(e.target.value)} aria-label="Reminder" className={control}>
+            <option value="none">No reminder</option>
+            {[0, 5, 15, 30, 60, 1440].map((m) => (
+              <option key={m} value={m}>
+                {formatOffset(m, "At start")}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <div className="flex items-center justify-between gap-2">
         {event ? (

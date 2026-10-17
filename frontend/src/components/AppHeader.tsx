@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { logout, type User } from "@/lib/api";
+import NotificationBell from "./NotificationBell";
 
 const NAV = [
   { href: "/tasks", label: "Tasks" },
   { href: "/calendar", label: "Calendar" },
   { href: "/projects", label: "Projects" },
+  { href: "/reminders", label: "Reminders" },
 ];
 
 export default function AppHeader({ user }: { user: User }) {
@@ -39,6 +41,7 @@ export default function AppHeader({ user }: { user: User }) {
         </nav>
       </div>
       <div className="flex items-center gap-3 text-sm">
+        <NotificationBell />
         <span className="text-zinc-600 dark:text-zinc-400">{user.name}</span>
         <button type="button" onClick={onLogout} className="underline">
           Sign out

@@ -51,6 +51,24 @@ export function fromDateInputEndOfDay(value: string): string | null {
   return value ? new Date(`${value}T23:59:59`).toISOString() : null;
 }
 
+/** "just now", "5 min ago", "3 h ago", "2 d ago". */
+export function timeAgo(iso: string, now = new Date()): string {
+  const minutes = Math.round((now.getTime() - new Date(iso).getTime()) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 24 * 60) return `${Math.round(minutes / 60)} h ago`;
+  return `${Math.round(minutes / (24 * 60))} d ago`;
+}
+
+/** "At due time", "15 min before", "2 h before", "1 day before". */
+export function formatOffset(minutes: number, zeroLabel = "At due time"): string {
+  if (minutes === 0) return zeroLabel;
+  if (minutes < 60) return `${minutes} min before`;
+  if (minutes < 24 * 60) return `${Math.round(minutes / 60)} h before`;
+  const days = Math.round(minutes / (24 * 60));
+  return `${days} day${days === 1 ? "" : "s"} before`;
+}
+
 /** "YYYY-MM-DD" of a Date in the viewer's time zone. */
 export function localDateKey(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");

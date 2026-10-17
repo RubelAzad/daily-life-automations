@@ -24,7 +24,8 @@ const (
 )
 
 type CalendarService struct {
-	Events repository.CalendarEventRepository
+	Events    repository.CalendarEventRepository
+	Reminders repository.ReminderRepository
 }
 
 // CreateEventInput: timed events use starts_at/ends_at (RFC 3339); all-day
@@ -236,6 +237,10 @@ func (s CalendarService) Update(ctx context.Context, userID, id uint64, in Updat
 
 	saved, err := s.Events.Update(ctx, e)
 	if err != nil {
+		return saved, nil, err
+	}
+	// Reminders follow the event when its time or recurrence moves.
+	if err := rescheduleEventReminders(ctx, s.Reminders, saved, time.Now().UTC()); err != nil {
 		return saved, nil, err
 	}
 	conflicts, err := s.conflictsFor(ctx, saved)

@@ -123,6 +123,43 @@ A project groups tasks toward a goal. It's separate from lists: a task can be in
 
 **Not yet supported:** editing or deleting a single occurrence of a repeating event (exceptions), and attendees and invitations. Google Calendar sync comes in Step 6.1.
 
+## Reminders
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/reminders` | Query: `status` (`scheduled` by default; also `sent`, `cancelled`, comma-separated values, or `all`), `task_id`, `event_id`, `page`, `per_page`. Ordered by next fire time; inactive reminders come last. |
+| POST | `/reminders` | See the kinds below. |
+| PATCH | `/reminders/:id` | `title` (standalone only), `note`, `remind_at`, `offset_minutes`, `follow_up_minutes`, `max_follow_ups`. Any change re-arms the reminder. You can't move a reminder to a different task or event. |
+| DELETE | `/reminders/:id` | `204` |
+| POST | `/reminders/:id/snooze` | `{"minutes": 1–10080}`. Fires again after that delay. Doesn't use up follow-ups. |
+
+**Kinds** (`kind` in responses):
+
+| Kind | Create with | Behaviour |
+|---|---|---|
+| `standalone` | `title`, `remind_at` (future), optional `note` | Fires once |
+| `task` | `task_id`, plus `offset_minutes` (minutes before `due_at`, 0–43 200) **or** a fixed `remind_at` | Not delivered if the task is completed or cancelled by then (its status becomes `cancelled`). Offset reminders move when the due date changes, are inactive (`remind_at: null`) while there's no upcoming due date, and are copied to the next occurrence of a recurring task. |
+| `event` | `event_id`, `offset_minutes` (required) | Fires before **each** occurrence of a repeating event, then re-arms for the next one. Moves when the event changes. |
+
+**Follow-ups** (tasks only): `follow_up_minutes` (5–10 080) and `max_follow_ups` (1–10, default 3). After the first reminder, LifeOS keeps reminding every `follow_up_minutes` while the task is still open, up to the maximum. `follow_ups_sent` counts them.
+
+**Read-only fields:** `kind`, `subject_title` (the reminder's, task's or event's title), `occurs_at` (the due time or occurrence start that the next firing refers to), `status` (`scheduled`/`sent`/`cancelled`), `last_sent_at`.
+
+## Notifications
+
+The worker (`go run ./cmd/worker`) creates notifications. They are in-app only for now; email and push delivery come with integrations in Phase 6.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/notifications` | Newest first. Query: `unread=true`, `page`, `per_page`. Fields: `kind`, `title`, `body`, `link`, `priority` (`high` for urgent or high-priority tasks), `reminder_id` (for snoozing), `occurs_at`, `read_at`. |
+| GET | `/notifications/unread-count` | `{"data": {"unread": n}}` |
+| POST | `/notifications/:id/read` | `204`. Safe to repeat. |
+| POST | `/notifications/read-all` | `{"data": {"marked": n}}` |
+
+**Delivery guarantees:** each reminder is claimed with `SELECT … FOR UPDATE SKIP LOCKED` in its own transaction. Each notification carries the unique key `reminder:<id>:<fire time>` and is inserted with `INSERT IGNORE`. Running several workers, or rerunning one after a crash, never duplicates a notification.
+
+**Not yet:** quiet hours, escalation to other channels, and location-based reminders. Quiet hours come with user settings in Step 1.8; the other channels with integrations in Phase 6.
+
 ## Task lists
 
 New accounts start with Personal, Work, Family and Shopping.

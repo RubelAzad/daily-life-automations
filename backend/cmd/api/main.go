@@ -44,7 +44,13 @@ func main() {
 	projects := repository.ProjectRepository{DB: db}
 	taskService := services.TaskService{Tasks: repository.TaskRepository{DB: db}, Lists: taskLists, Projects: projects}
 	projectHandler := handlers.ProjectHandler{Projects: services.ProjectService{Projects: projects}}
-	calendarHandler := handlers.CalendarHandler{Calendar: services.CalendarService{Events: repository.CalendarEventRepository{DB: db}}}
+	events := repository.CalendarEventRepository{DB: db}
+	reminders := repository.ReminderRepository{DB: db}
+	calendarHandler := handlers.CalendarHandler{Calendar: services.CalendarService{Events: events, Reminders: reminders}}
+	reminderHandler := handlers.ReminderHandler{
+		Reminders:     services.ReminderService{Reminders: reminders, Tasks: repository.TaskRepository{DB: db}, Events: events},
+		Notifications: services.NotificationService{Notifications: repository.NotificationRepository{DB: db}},
+	}
 
 	authService := services.AuthService{
 		Users:      repository.UserRepository{DB: db},
@@ -91,6 +97,17 @@ func main() {
 	protected.GET("/events/:id", calendarHandler.Get)
 	protected.PATCH("/events/:id", calendarHandler.Update)
 	protected.DELETE("/events/:id", calendarHandler.Delete)
+
+	protected.GET("/reminders", reminderHandler.List)
+	protected.POST("/reminders", reminderHandler.Create)
+	protected.PATCH("/reminders/:id", reminderHandler.Update)
+	protected.DELETE("/reminders/:id", reminderHandler.Delete)
+	protected.POST("/reminders/:id/snooze", reminderHandler.Snooze)
+
+	protected.GET("/notifications", reminderHandler.ListNotifications)
+	protected.GET("/notifications/unread-count", reminderHandler.UnreadCount)
+	protected.POST("/notifications/read-all", reminderHandler.MarkAllRead)
+	protected.POST("/notifications/:id/read", reminderHandler.MarkRead)
 
 	log.Printf("LifeOS API listening on :%s", cfg.Port)
 	log.Fatal(router.Run(":" + cfg.Port))

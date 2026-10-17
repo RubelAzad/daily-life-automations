@@ -273,17 +273,24 @@ func (s TaskService) Update(ctx context.Context, userID, id uint64, in UpdateTas
 	setCompletedAt(&t, previousStatus)
 
 	var updated models.Task
-	err = s.Tasks.InTx(ctx, func(tx repository.TaskRepository) error {
+	now := time.Now().UTC()
+	err = repository.InTx(ctx, s.Tasks.DB, func(db repository.DBTX) error {
+		tasks, reminders := repository.TaskRepository{DB: db}, repository.ReminderRepository{DB: db}
 		if completing && t.Recurrence != nil && t.NextTaskID == nil {
-			nextID, err := createNextOccurrence(ctx, tx, t, time.Now().UTC())
+			nextID, err := createNextOccurrence(ctx, tasks, reminders, t, now)
 			if err != nil {
 				return err
 			}
 			t.NextTaskID = nextID
 		}
 		var err error
-		updated, err = tx.Update(ctx, t)
-		return err
+		if updated, err = tasks.Update(ctx, t); err != nil {
+			return err
+		}
+		if in.DueAt.Set {
+			return rescheduleTaskReminders(ctx, reminders, updated, now)
+		}
+		return nil
 	})
 	return updated, err
 }
@@ -335,7 +342,7 @@ func (s TaskService) RemoveDependency(ctx context.Context, userID, taskID, depen
 
 // createNextOccurrence inserts the follow-up of a completed recurring task and
 // copies its subtasks as open items. Returns nil when the series has ended.
-func createNextOccurrence(ctx context.Context, tx repository.TaskRepository, t models.Task, now time.Time) (*uint64, error) {
+func createNextOccurrence(ctx context.Context, tx repository.TaskRepository, reminders repository.ReminderRepository, t models.Task, now time.Time) (*uint64, error) {
 	if t.DueAt == nil || t.RecurrenceAnchorAt == nil {
 		return nil, nil
 	}
@@ -375,6 +382,9 @@ func createNextOccurrence(ctx context.Context, tx repository.TaskRepository, t m
 		}); err != nil {
 			return nil, err
 		}
+	}
+	if err := copyTaskReminders(ctx, reminders, t.ID, next, now); err != nil {
+		return nil, err
 	}
 	return &next.ID, nil
 }

@@ -343,6 +343,94 @@ export function deleteEvent(id: number) {
   return request<void>(`/events/${id}`, { method: "DELETE" });
 }
 
+// ---- Reminders & notifications ---------------------------------------------
+
+export type ReminderStatus = "scheduled" | "sent" | "cancelled";
+
+export type Reminder = {
+  id: number;
+  task_id: number | null;
+  event_id: number | null;
+  title: string | null; // standalone only
+  note: string | null;
+  /** Minutes before the task's due time / event start; null for a fixed time. */
+  offset_minutes: number | null;
+  /** Next time it fires; null while inactive (e.g. task has no upcoming due date). */
+  remind_at: string | null;
+  occurs_at: string | null;
+  follow_up_minutes: number | null;
+  max_follow_ups: number;
+  follow_ups_sent: number;
+  status: ReminderStatus;
+  last_sent_at: string | null;
+  kind: "standalone" | "task" | "event";
+  subject_title: string;
+};
+
+export type ReminderInput = {
+  title?: string;
+  note?: string | null;
+  remind_at?: string | null;
+  task_id?: number;
+  event_id?: number;
+  offset_minutes?: number | null;
+  follow_up_minutes?: number | null;
+  max_follow_ups?: number;
+};
+
+/** Named to avoid clashing with the browser's Notification type. */
+export type AppNotification = {
+  id: number;
+  kind: string;
+  title: string;
+  body: string | null;
+  link: string | null;
+  priority: "low" | "normal" | "high";
+  reminder_id: number | null;
+  occurs_at: string | null;
+  read_at: string | null;
+  created_at: string;
+};
+
+export function listReminders(query: { status?: string; task_id?: number; event_id?: number; per_page?: number } = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== "") params.set(key, String(value));
+  }
+  return request<{ data: Reminder[]; meta: PageMeta }>(`/reminders?${params}`);
+}
+
+export async function createReminder(input: ReminderInput) {
+  return (await request<{ data: Reminder }>("/reminders", { method: "POST", body: JSON.stringify(input) })).data;
+}
+
+export function deleteReminder(id: number) {
+  return request<void>(`/reminders/${id}`, { method: "DELETE" });
+}
+
+export async function snoozeReminder(id: number, minutes: number) {
+  return (await request<{ data: Reminder }>(`/reminders/${id}/snooze`, { method: "POST", body: JSON.stringify({ minutes }) })).data;
+}
+
+export function listNotifications(query: { unread?: boolean; per_page?: number } = {}) {
+  const params = new URLSearchParams();
+  if (query.unread) params.set("unread", "true");
+  if (query.per_page) params.set("per_page", String(query.per_page));
+  return request<{ data: AppNotification[]; meta: PageMeta }>(`/notifications?${params}`);
+}
+
+export async function getUnreadCount() {
+  return (await request<{ data: { unread: number } }>("/notifications/unread-count")).data.unread;
+}
+
+export function markNotificationRead(id: number) {
+  return request<void>(`/notifications/${id}/read`, { method: "POST" });
+}
+
+export function markAllNotificationsRead() {
+  return request<{ data: { marked: number } }>("/notifications/read-all", { method: "POST" });
+}
+
 // ---- Auth ------------------------------------------------------------------
 
 /** Returns the signed-in user, or null when not signed in. */

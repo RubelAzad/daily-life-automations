@@ -13,7 +13,12 @@ type DBTX interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// inTx runs fn in a transaction, or directly if db is already a transaction.
+// InTx runs fn in a transaction, or directly if db is already a transaction,
+// so several repositories can share one: build each with DB: tx.
+func InTx(ctx context.Context, db DBTX, fn func(tx DBTX) error) error {
+	return inTx(ctx, db, fn)
+}
+
 func inTx(ctx context.Context, db DBTX, fn func(DBTX) error) error {
 	sqlDB, ok := db.(*sql.DB)
 	if !ok {

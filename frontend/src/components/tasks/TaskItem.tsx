@@ -30,6 +30,7 @@ import {
   toDateInput,
   toLocalInput,
 } from "@/lib/format";
+import RemindersPanel from "@/components/RemindersPanel";
 import Subtasks from "./Subtasks";
 
 type Props = {
@@ -342,6 +343,7 @@ function TaskEditor({
       )}
 
       <DependencyEditor task={task} onChanged={onDependenciesChanged} onError={onError} />
+      <RemindersPanel taskId={task.id} hasDue={task.due_at !== null} onError={onError} />
 
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onCancel} className="px-3 py-1.5 text-sm underline">
