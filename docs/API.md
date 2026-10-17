@@ -87,6 +87,35 @@ The model can only use the tools in the allowlist below, with input decoded stri
 
 **Turns finish** even if the browser disconnects (up to 3 minutes).
 
+### Briefings
+
+A morning plan and an evening wrap-up, written by the model from the user's day. **They only advise; nothing is changed.** To act on one, call `POST /tasks/carry-forward` (the Today page's "Move to tomorrow" button).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/ai/briefings/today` | `{date, morning, evening}`: the latest of each for the user's local today, or `null` |
+| GET | `/ai/briefings` | History, newest first. `page`, `per_page` |
+| POST | `/ai/briefings` | `{"kind": "morning" \| "evening"}`. Writes one now: `201` with the briefing. `429` within a minute of the last of that kind, `503` when AI is off, `502` if the model fails (the failed briefing is stored with its `error`). |
+
+**Briefing fields:** `{id, kind, date, trigger (manual|scheduled), status (generating|ready|failed), content, error, model}`. `model` is `null` when no model was needed.
+
+**Content:**
+- Morning: `{summary, focus: [{task_id, title, reason}], schedule: [{start, end, kind (event|task|break), title, task_id?, event_id?}], warnings: []}`. Times are local `HH:MM`.
+- Evening: `{summary, wins: [], unfinished: [{task_id, title, suggestion (tomorrow|later|drop), reason}], tomorrow}`.
+
+**How they're made:**
+- **Data sent:** the day (overdue and due tasks, today's events, reminders, expiring documents, plus tomorrow for the evening), in local times and marked as data, not instructions.
+- **Structured output:** the model must answer through a required format (a forced tool call).
+- **Checked against your data:** task and event IDs that don't exist in it are dropped, titles come from the database (never from the model), bad times are removed, and text is capped and redacted.
+- **Empty days:** no model call is made.
+- **Audit log:** each call is recorded with `source: "briefing"` (metadata only).
+
+**Scheduled briefings** (Settings: `morning_briefing_enabled/time`, `evening_summary_enabled/time`, off by default):
+- **Who makes them:** the worker makes each one once per day.
+- **When:** after the local time and within 3 hours of it, unless one was already written by hand that day.
+- **Notification:** a `briefing` notification links to `/today`.
+- **Duplicates:** two workers can't both make it (unique key per user, kind and day).
+
 **Tools and risk:**
 
 | Risk | Tools | Needs approval |
@@ -116,6 +145,8 @@ The model can only use the tools in the allowlist below, with input decoded stri
 | `week_starts_on` | `0` Sunday, `1` Monday, `6` Saturday | `1` | The calendar week |
 | `quiet_hours_enabled` | `true`/`false` | `false` | |
 | `quiet_hours_start`, `quiet_hours_end` | `HH:MM`, local time; must differ | `22:00`, `07:00` | Start later than end means the window crosses midnight. |
+| `morning_briefing_enabled`, `evening_summary_enabled` | `true`/`false` | `false` | Automatic AI briefings (see [Briefings](#briefings)). Each is a paid model call. |
+| `morning_briefing_time`, `evening_summary_time` | `HH:MM` local | `07:30`, `21:00` | |
 | `ai_approval_mode` | `always` (ask before every change) or `high_impact_only` (routine changes to tasks, notes, events and reminders without asking) | `always` | The AI assistant (Phase 2). Sending messages, spending money, deleting data and bookings **always** need approval; there is no mode that skips it. |
 
 **Changing the time zone** recomputes pending event and note reminders. Reminders that were already sent are not re-sent.

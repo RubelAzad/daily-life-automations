@@ -31,10 +31,18 @@ type Request struct {
 	SystemSuffix string
 	// Cache asks the provider to cache the tools and System between calls,
 	// which makes multi-step chat turns cheaper and faster.
-	Cache     bool
-	Messages  []Message
-	Tools     []ToolSpec
-	MaxTokens int // 0 uses the client's default
+	Cache    bool
+	Messages []Message
+	Tools    []ToolSpec
+	// ToolChoice forces a specific tool, which is how structured output is
+	// requested (the tool's input schema is the output format).
+	ToolChoice *ToolChoice
+	MaxTokens  int // 0 uses the client's default
+}
+
+type ToolChoice struct {
+	Type string `json:"type"` // "tool"
+	Name string `json:"name"`
 }
 
 type Message struct {

@@ -41,20 +41,8 @@ type RunStats struct {
 	Errors    int
 }
 
-// Run processes due reminders every interval until ctx is cancelled. A failed
-// pass is logged and retried on the next tick.
-func (w ReminderWorker) Run(ctx context.Context, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		w.logPass(w.RunOnce(ctx))
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-	}
-}
+// Tick processes due reminders once and logs the outcome.
+func (w ReminderWorker) Tick(ctx context.Context) { w.logPass(w.RunOnce(ctx)) }
 
 func (w ReminderWorker) logPass(stats RunStats, err error) {
 	if err != nil {

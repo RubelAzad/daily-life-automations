@@ -175,6 +175,32 @@ export default function SettingsView() {
             </p>
           </section>
 
+          <section className={section} aria-labelledby="brief-heading">
+            <h2 id="brief-heading" className="font-medium">
+              Daily briefings
+            </h2>
+            <p className="text-sm text-zinc-500">
+              The assistant writes a plan for your day and a wrap-up in the evening, and sends you a notification. You can also ask for one any time on the
+              Today page. Each briefing is a small paid AI call, so they&rsquo;re off until you turn them on.
+            </p>
+            {(
+              [
+                ["morning_briefing_enabled", "morning_briefing_time", "Morning plan at"],
+                ["evening_summary_enabled", "evening_summary_time", "Evening wrap-up at"],
+              ] as const
+            ).map(([flag, time, label]) => (
+              <div key={flag} className="flex flex-wrap items-center gap-2 text-sm">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={draft[flag]} onChange={(e) => set(flag, e.target.checked)} />
+                  {label}
+                </label>
+                <input type="time" value={draft[time]} onChange={(e) => set(time, e.target.value)} disabled={!draft[flag]} aria-label={label} className={control} />
+                {fieldError(time)}
+              </div>
+            ))}
+            <p className="text-xs text-zinc-500">Needs the worker running (see setup). A briefing turned on later than 3 hours after its time starts the next day.</p>
+          </section>
+
           <section className={section} aria-labelledby="ai-heading">
             <h2 id="ai-heading" className="font-medium">
               AI assistant approvals

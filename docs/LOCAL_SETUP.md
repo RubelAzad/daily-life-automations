@@ -69,6 +69,8 @@ go run ./cmd/worker -once      # process whatever is due now, then exit
 
 It's safe to run more than one worker, or to restart one at any time: each reminder is claimed with a row lock, and each notification has a unique key, so nothing is delivered twice.
 
+It also makes scheduled AI briefings for users who turned them on in Settings (only when AI is configured); `-once` prints `briefings: generated=N failed=N`.
+
 The worker respects each user's quiet hours (Settings page): reminders due in that window are held until it ends, and the `-once` output counts them as `held`.
 
 ## Frontend

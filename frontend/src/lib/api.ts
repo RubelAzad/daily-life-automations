@@ -74,6 +74,11 @@ export type Settings = {
   quiet_hours_start: string; // "HH:MM"
   quiet_hours_end: string;
   ai_approval_mode: ApprovalMode;
+  /** Automatic AI briefings at a local "HH:MM" time; off by default. */
+  morning_briefing_enabled: boolean;
+  morning_briefing_time: string;
+  evening_summary_enabled: boolean;
+  evening_summary_time: string;
   updated_at: string;
 };
 
@@ -732,4 +737,43 @@ export async function sendChatMessage(conversationId: number, text: string) {
       body: JSON.stringify({ text }),
     })
   ).data;
+}
+
+// ---- Briefings -------------------------------------------------------------
+
+export type BriefingKind = "morning" | "evening";
+
+export type MorningPlan = {
+  summary: string;
+  focus: { task_id: number; title: string; reason: string }[];
+  schedule: { start: string; end: string; kind: "event" | "task" | "break"; title: string; task_id?: number; event_id?: number }[];
+  warnings: string[];
+};
+
+export type EveningSummary = {
+  summary: string;
+  wins: string[];
+  unfinished: { task_id: number; title: string; suggestion: "tomorrow" | "later" | "drop"; reason: string }[];
+  tomorrow: string;
+};
+
+export type Briefing = {
+  id: number;
+  kind: BriefingKind;
+  date: string;
+  trigger: "manual" | "scheduled";
+  status: "generating" | "ready" | "failed";
+  content: MorningPlan | EveningSummary | null;
+  error: string | null;
+  model: string | null; // null when no model was needed (an empty day)
+  created_at: string;
+};
+
+export async function getTodayBriefings() {
+  return (await request<{ data: { date: string; morning: Briefing | null; evening: Briefing | null } }>("/ai/briefings/today")).data;
+}
+
+/** Writes a briefing now (a few seconds). It only advises; nothing is changed. */
+export async function createBriefing(kind: BriefingKind) {
+  return (await request<{ data: Briefing }>("/ai/briefings", { method: "POST", body: JSON.stringify({ kind }) })).data;
 }

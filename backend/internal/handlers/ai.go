@@ -12,7 +12,8 @@ import (
 )
 
 type AIHandler struct {
-	AI ai.Service
+	AI      ai.Service
+	Briefer ai.Briefer
 }
 
 func (h AIHandler) Status(c *gin.Context) {
@@ -87,7 +88,7 @@ func respondAIError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ai.ErrNotConfigured):
 		respondError(c, http.StatusServiceUnavailable, err.Error())
-	case errors.Is(err, ai.ErrRateLimited), errors.Is(err, ai.ErrChatRateLimited):
+	case errors.Is(err, ai.ErrRateLimited), errors.Is(err, ai.ErrChatRateLimited), errors.Is(err, ai.ErrBriefingRateLimited):
 		respondError(c, http.StatusTooManyRequests, err.Error())
 	case errors.Is(err, ai.ErrNotPending), errors.Is(err, ai.ErrApprovalExpired), errors.Is(err, ai.ErrChatBusy):
 		respondError(c, http.StatusConflict, err.Error())
@@ -197,4 +198,43 @@ func pageParams(c *gin.Context) (page, perPage int, ok bool) {
 		return 0, 0, false
 	}
 	return page, perPage, true
+}
+
+// TodayBriefings returns the latest morning and evening briefing for today.
+func (h AIHandler) TodayBriefings(c *gin.Context) {
+	res, err := h.Briefer.Today(c.Request.Context(), middleware.CurrentUser(c).ID)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": res})
+}
+
+func (h AIHandler) ListBriefings(c *gin.Context) {
+	page, perPage, ok := pageParams(c)
+	if !ok {
+		return
+	}
+	list, meta, err := h.Briefer.List(c.Request.Context(), middleware.CurrentUser(c).ID, page, perPage)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": list, "meta": meta})
+}
+
+// CreateBriefing writes a briefing now. It only advises; nothing is changed.
+func (h AIHandler) CreateBriefing(c *gin.Context) {
+	var in struct {
+		Kind string `json:"kind"`
+	}
+	if !bindJSON(c, &in) {
+		return
+	}
+	b, err := h.Briefer.Generate(c.Request.Context(), middleware.CurrentUser(c).ID, in.Kind, false)
+	if err != nil {
+		respondAIError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"data": b})
 }

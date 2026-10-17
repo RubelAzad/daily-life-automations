@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import AppHeader, { ErrorBanner } from "@/components/AppHeader";
+import BriefingPanel from "@/components/today/BriefingPanel";
 import { carryForward, createTask, deviceTimeZone, getToday, updateTask, type EventOccurrence, type Task, type Today } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { formatDate, formatDue, formatTime, fromDateInputEndOfDay, isPastDate } from "@/lib/format";
@@ -109,6 +110,11 @@ export default function TodayView() {
               </p>
             )}
           </div>
+
+          <BriefingPanel
+            openTaskIds={new Set([...today.overdue, ...today.due_today].map((t) => t.id))}
+            onChanged={() => setVersion((v) => v + 1)}
+          />
 
           {notice && (
             <p role="status" className="text-sm text-green-700 dark:text-green-400">
