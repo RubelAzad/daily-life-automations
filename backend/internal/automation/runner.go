@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"lifeos-ai/backend/internal/ai"
+	"lifeos-ai/backend/internal/services"
 )
 
 // Job is background work done on every tick.
@@ -43,5 +44,22 @@ func (w BriefingWorker) Tick(ctx context.Context) {
 		w.Log.Printf("briefings: pass failed: %v", err)
 	case stats != (ai.BriefingStats{}):
 		w.Log.Printf("briefings: generated=%d failed=%d", stats.Generated, stats.Failed)
+	}
+}
+
+// SearchIndexWorker extracts text from new uploads and re-indexes changed
+// notes, as a backup for the indexing the API does straight away.
+type SearchIndexWorker struct {
+	Search services.SearchService
+	Log    *log.Logger
+}
+
+func (w SearchIndexWorker) Tick(ctx context.Context) {
+	files, notes, err := w.Search.IndexPending(ctx, 20)
+	switch {
+	case err != nil:
+		w.Log.Printf("search: pass failed: %v", err)
+	case files+notes > 0:
+		w.Log.Printf("search: indexed files=%d notes=%d", files, notes)
 	}
 }

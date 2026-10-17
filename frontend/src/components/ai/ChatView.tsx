@@ -378,7 +378,29 @@ function ActionCard({
   const lookup = (live?.risk ?? "") === "read";
 
   if (lookup && status === "succeeded") {
-    return <p className="text-xs text-zinc-500">↳ {summary}</p>;
+    const sources = block.name === "search_documents" ? documentSources(result?.output) : [];
+    return (
+      <div className="flex flex-col gap-1 text-xs text-zinc-500">
+        <span>
+          ↳ {summary}
+          {block.name === "search_documents" && ` · ${sources.length ? `${sources.length} found` : "nothing found"}`}
+        </span>
+        {sources.length > 0 && (
+          <ul className="flex flex-wrap gap-1.5 pl-3">
+            {sources.map((s) => (
+              <li key={`${s.note_id}-${s.file_id ?? 0}`}>
+                <Link
+                  href={`/notes?id=${s.note_id}`}
+                  className="inline-block max-w-64 truncate rounded-full border border-zinc-300 px-2 py-0.5 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                >
+                  {s.file_name ? `📄 ${s.file_name}` : `📝 ${s.note_title}`}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
   }
   const tone =
     status === "pending_approval"
@@ -416,4 +438,13 @@ function ActionCard({
       )}
     </div>
   );
+}
+
+type DocumentSource = { note_id: number; note_title: string; file_id?: number; file_name?: string };
+
+/** The notes and files a search_documents call returned, for source links. */
+function documentSources(output: unknown): DocumentSource[] {
+  const results = (output as { results?: unknown } | undefined)?.results;
+  if (!Array.isArray(results)) return [];
+  return results.filter((r): r is DocumentSource => typeof r === "object" && r !== null && typeof (r as DocumentSource).note_id === "number");
 }

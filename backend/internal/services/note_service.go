@@ -33,6 +33,41 @@ type NoteService struct {
 	Reminders      repository.ReminderRepository
 	Store          storage.Store
 	MaxUploadBytes int64
+	// Index keeps the search index current; nil turns indexing off.
+	Index NoteIndexer
+}
+
+// NoteIndexer is the part of SearchService that notes need.
+type NoteIndexer interface {
+	IndexNote(ctx context.Context, userID, noteID uint64) error
+	IndexFileNow(ctx context.Context, f models.File) error
+}
+
+// indexNote updates the note in the search index straight away, so a note
+// can be found (and asked about) right after saving. A failure leaves the
+// note marked as changed, and the worker indexes it later.
+func (s NoteService) indexNote(ctx context.Context, userID, id uint64) {
+	if s.Index == nil {
+		return
+	}
+	if err := s.Index.IndexNote(ctx, userID, id); err != nil {
+		log.Printf("search: note %d: %v (the worker will retry)", id, err)
+	}
+}
+
+// indexFileSoon extracts an upload's text in the background; the upload
+// response doesn't wait for it. The worker picks up anything this misses.
+func (s NoteService) indexFileSoon(f models.File) {
+	if s.Index == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		if err := s.Index.IndexFileNow(ctx, f); err != nil {
+			log.Printf("search: file %d: %v (the worker will retry)", f.ID, err)
+		}
+	}()
 }
 
 type ListNotesInput struct {
@@ -175,6 +210,7 @@ func (s NoteService) Create(ctx context.Context, userID uint64, in CreateNoteInp
 	if err != nil {
 		return models.Note{}, err
 	}
+	s.indexNote(ctx, userID, id)
 	return s.Get(ctx, userID, id)
 }
 
@@ -241,6 +277,7 @@ func (s NoteService) Update(ctx context.Context, userID, id uint64, in UpdateNot
 	if err != nil {
 		return models.Note{}, err
 	}
+	s.indexNote(ctx, userID, id)
 	return s.Get(ctx, userID, id)
 }
 
@@ -352,6 +389,7 @@ func (s NoteService) Upload(ctx context.Context, userID, noteID uint64, name str
 		_ = s.Store.Delete(key) // don't leave an orphan behind
 		return models.File{}, err
 	}
+	s.indexFileSoon(f)
 	return f, nil
 }
 

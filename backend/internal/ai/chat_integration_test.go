@@ -105,7 +105,7 @@ func TestChatTurnWithApproval(t *testing.T) {
 	assertWellFormed(t, svc, f, conv.ID)
 
 	req := client.last()
-	if !req.Cache || req.System != systemRules || len(req.Tools) != 12 {
+	if !req.Cache || req.System != systemRules || len(req.Tools) != 13 {
 		t.Error("request must cache the rules and send the tool list")
 	}
 	if !strings.Contains(req.SystemSuffix, "Approval setting: Changes") || !strings.Contains(req.SystemSuffix, "time zone UTC") {

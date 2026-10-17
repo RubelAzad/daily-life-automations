@@ -19,6 +19,7 @@ type Deps struct {
 	Notes     services.NoteService
 	Reminders services.ReminderService
 	Today     services.TodayService
+	Search    services.SearchService
 }
 
 const (
@@ -31,7 +32,7 @@ func BuiltinTools(d Deps) *Registry {
 	return NewRegistry(
 		getTodayTool(d), listTasksTool(d), createTaskTool(d), completeTaskTool(d), rescheduleTaskTool(d),
 		carryForwardTool(d), deleteTaskTool(d), listEventsTool(d), createEventTool(d),
-		searchNotesTool(d), createNoteTool(d), createReminderTool(d),
+		searchNotesTool(d), searchDocumentsTool(d), createNoteTool(d), createReminderTool(d),
 	)
 }
 
@@ -491,5 +492,47 @@ func createReminderTool(d Deps) Tool {
 				return nil, err
 			}
 			return map[string]any{"id": r.ID, "kind": r.Kind, "title": r.SubjectTitle, "remind_at": r.RemindAt}, nil
+		})
+}
+
+type searchDocumentsInput struct {
+	Query string `json:"query"`
+	Limit int    `json:"limit"`
+}
+
+type documentHit struct {
+	NoteID    uint64  `json:"note_id"`
+	NoteTitle string  `json:"note_title"`
+	FileID    *uint64 `json:"file_id,omitempty"`
+	FileName  *string `json:"file_name,omitempty"`
+	Excerpt   string  `json:"excerpt"`
+}
+
+func searchDocumentsTool(d Deps) Tool {
+	return define("search_documents",
+		"Search inside the user's notes and the text of their attached files (PDF, Word, Excel, PowerPoint, text). Use a few distinctive keywords, not a question (e.g. \"car insurance policy\"). Matches word starts, so \"insur\" finds \"insurance\". If nothing is found, try synonyms or fewer words. Returns passages to answer from; cite the note or file title.",
+		RiskRead, `{"type":"object","properties":{
+			"query":{"type":"string","minLength":1,"maxLength":200},
+			"limit":{"type":"integer","minimum":1,"maximum":10,"description":"Default 6"}
+		},"required":["query"],"additionalProperties":false}`,
+		func(_ context.Context, _ uint64, in searchDocumentsInput) string {
+			return "Search documents for " + quote(in.Query)
+		},
+		func(ctx context.Context, userID uint64, in searchDocumentsInput) (any, error) {
+			if in.Limit == 0 {
+				in.Limit = 6
+			}
+			if in.Limit < 1 || in.Limit > 10 {
+				return nil, &InputError{Message: "limit must be between 1 and 10"}
+			}
+			results, err := d.Search.Query(ctx, userID, in.Query, in.Limit)
+			if err != nil {
+				return nil, err
+			}
+			hits := make([]documentHit, len(results))
+			for i, r := range results {
+				hits[i] = documentHit{NoteID: r.NoteID, NoteTitle: r.NoteTitle, FileID: r.FileID, FileName: r.FileName, Excerpt: r.Excerpt}
+			}
+			return map[string]any{"results": hits, "count": len(hits)}, nil
 		})
 }

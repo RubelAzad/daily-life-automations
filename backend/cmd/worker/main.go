@@ -1,5 +1,5 @@
 // Command worker runs background jobs separately from the API: reminder
-// delivery and scheduled AI briefings. Run with -once to process due work
+// delivery, scheduled AI briefings and search indexing. Run with -once to process due work
 // and exit.
 package main
 
@@ -19,6 +19,7 @@ import (
 	"lifeos-ai/backend/internal/database"
 	"lifeos-ai/backend/internal/repository"
 	"lifeos-ai/backend/internal/services"
+	"lifeos-ai/backend/internal/storage"
 )
 
 func main() {
@@ -56,6 +57,13 @@ func main() {
 		Briefer: ai.NewBriefer(aiService, deps, repository.BriefingRepository{DB: db}, repository.NotificationRepository{DB: db}),
 		Log:     logger,
 	}
+	search := automation.SearchIndexWorker{
+		Search: services.SearchService{
+			Search: repository.SearchRepository{DB: db}, Notes: notes, Files: repository.FileRepository{DB: db},
+			Store: storage.LocalStore{Root: cfg.StorageDir}, Log: logger,
+		},
+		Log: logger,
+	}
 	if !aiService.Status().Enabled {
 		logger.Printf("AI disabled: scheduled briefings are off")
 	}
@@ -71,6 +79,11 @@ func main() {
 			logger.Fatal(err)
 		}
 		logger.Printf("briefings: generated=%d failed=%d", bs.Generated, bs.Failed)
+		files, notesIndexed, err := search.Search.IndexPending(context.Background(), 200)
+		if err != nil {
+			logger.Fatal(err)
+		}
+		logger.Printf("search: indexed files=%d notes=%d", files, notesIndexed)
 		return
 	}
 
@@ -84,6 +97,6 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	logger.Printf("started; running jobs every %s", interval)
-	automation.Run(ctx, interval, reminders, briefings)
+	automation.Run(ctx, interval, reminders, briefings, search)
 	logger.Println("stopped")
 }

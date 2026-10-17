@@ -12,6 +12,7 @@ import {
   updateNote,
   uploadFile,
   type Note,
+  type NoteFile,
   type NoteKind,
   type Project,
 } from "@/lib/api";
@@ -46,6 +47,14 @@ export default function NoteEditor(props: Props) {
       cancelled = true;
     };
   }, [noteId, version, onError]);
+
+  // New uploads are read in the background; check back until they're done.
+  const reading = note?.files?.some((f) => f.text_status === "pending" || f.text_status === "processing");
+  useEffect(() => {
+    if (!reading) return;
+    const id = setTimeout(() => setVersion((v) => v + 1), 1500);
+    return () => clearTimeout(id);
+  }, [reading, version]);
 
   if (noteId !== null && !note) return <p className="text-zinc-500">Loading note…</p>;
   // Remounts with fresh server values after each save (updated_at changes);
@@ -210,6 +219,7 @@ function NoteForm({ note, projects, onSaved, onDeleted, onChanged, onError, refr
                   <a href={fileUrl(f.id)} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 truncate underline">
                     {f.name}
                   </a>
+                  <TextStatus file={f} />
                   <span className="shrink-0 text-xs text-zinc-500">{formatBytes(f.size_bytes)}</span>
                   <a href={fileUrl(f.id, true)} className="shrink-0 text-xs underline">
                     Download
@@ -237,5 +247,23 @@ function NoteForm({ note, projects, onSaved, onDeleted, onChanged, onError, refr
         </section>
       )}
     </div>
+  );
+}
+
+/** Whether a file's contents can be searched (and asked about). */
+function TextStatus({ file }: { file: NoteFile }) {
+  const [label, tone] =
+    file.text_status === "ready"
+      ? ["Searchable", "text-green-700 dark:text-green-400"]
+      : file.text_status === "unsupported"
+        ? ["Not searchable", "text-zinc-400"]
+        : file.text_status === "failed"
+          ? ["Couldn't read", "text-amber-700 dark:text-amber-400"]
+          : ["Reading text…", "text-zinc-500"];
+  const title = file.text_error ?? (file.text_chars ? `${file.text_chars.toLocaleString()} characters of text` : undefined);
+  return (
+    <span className={`shrink-0 text-xs ${tone}`} title={title}>
+      {label}
+    </span>
   );
 }

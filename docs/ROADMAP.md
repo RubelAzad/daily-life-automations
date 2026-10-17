@@ -25,13 +25,13 @@ All 20 modules from [DAILY_LIFE_MODULES.md](DAILY_LIFE_MODULES.md), split into s
 | 2.1 | LLM client, typed tool allowlist, AI audit log | 17 | ✅ Done |
 | 2.2 | Chat endpoint: intent → planner → tools (`create_task`, `list_tasks`, …) | 17 | ✅ Done |
 | 2.3 | AI daily plan, morning briefing, end-of-day summary | 1, 17 | ✅ Done |
-| 2.4 | Personal knowledge search across notes and files | 9, 17 | ⬜ Next |
+| 2.4 | Personal knowledge search across notes and files | 9, 17 | ✅ Done |
 
 ## Phase 3 — Automation engine
 
 | Step | Scope | Module | Status |
 |---|---|---|---|
-| 3.1 | Durable scheduler (`scheduled_jobs`), idempotency keys | 18 | ⬜ |
+| 3.1 | Durable scheduler (`scheduled_jobs`), idempotency keys | 18 | ⬜ Next |
 | 3.2 | Automations: triggers, conditions, actions; internal event bus | 18 | ⬜ |
 | 3.3 | Workflow runs: history, retries, error handling | 18 | ⬜ |
 | 3.4 | Approvals inbox (approve / reject) | 18, 20 | ⬜ |

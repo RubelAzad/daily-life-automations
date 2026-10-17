@@ -57,7 +57,7 @@ For offline development, `AI_PROVIDER=fake` uses a stand-in that makes no networ
 
 Executor tests that use the real database run separately: `go test -tags integration ./internal/ai/`.
 
-## Worker (reminders)
+## Worker (reminders, briefings, search)
 
 The worker is a separate process that turns due reminders into notifications. Without it, reminders are saved but never delivered.
 
@@ -70,6 +70,8 @@ go run ./cmd/worker -once      # process whatever is due now, then exit
 It's safe to run more than one worker, or to restart one at any time: each reminder is claimed with a row lock, and each notification has a unique key, so nothing is delivered twice.
 
 It also makes scheduled AI briefings for users who turned them on in Settings (only when AI is configured); `-once` prints `briefings: generated=N failed=N`.
+
+It also keeps the search index current: it extracts text from uploads the API didn't get to (and from files uploaded before search existed) and re-indexes changed notes; `-once` prints `search: indexed files=N notes=N`.
 
 The worker respects each user's quiet hours (Settings page): reminders due in that window are held until it ends, and the `-once` output counts them as `held`.
 

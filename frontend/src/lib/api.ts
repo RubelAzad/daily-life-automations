@@ -490,6 +490,10 @@ export type NoteFile = {
   content_type: string;
   size_bytes: number;
   sha256: string;
+  /** Whether the file's text can be searched; filled in shortly after upload. */
+  text_status: "pending" | "processing" | "ready" | "unsupported" | "failed";
+  text_error: string | null;
+  text_chars: number | null;
   created_at: string;
 };
 
@@ -776,4 +780,22 @@ export async function getTodayBriefings() {
 /** Writes a briefing now (a few seconds). It only advises; nothing is changed. */
 export async function createBriefing(kind: BriefingKind) {
   return (await request<{ data: Briefing }>("/ai/briefings", { method: "POST", body: JSON.stringify({ kind }) })).data;
+}
+
+// ---- Search ----------------------------------------------------------------
+
+/** The best-matching passage of a note, or of one of its files. */
+export type SearchResult = {
+  note_id: number;
+  note_title: string;
+  note_kind: NoteKind;
+  file_id: number | null;
+  file_name: string | null;
+  snippet: string;
+  score: number;
+};
+
+/** Searches notes and the text inside their attachments (PDF, Word, Excel, PowerPoint, text). */
+export async function searchDocuments(q: string, limit = 20) {
+  return (await request<{ data: SearchResult[] }>(`/search?${new URLSearchParams({ q, limit: String(limit) })}`)).data;
 }
