@@ -1,14 +1,19 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
+
+	"lifeos-ai/backend/internal/repository"
+	"lifeos-ai/backend/internal/services"
 )
 
 // RegisterValidation makes validation errors report JSON field names
@@ -41,8 +46,38 @@ func bindJSON(c *gin.Context, dst any) bool {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "validation failed", "fields": fields})
 		return false
 	}
+	var te *json.UnmarshalTypeError
+	if errors.As(err, &te) && te.Field != "" {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "validation failed", "fields": gin.H{te.Field: "has the wrong type"}})
+		return false
+	}
 	c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
 	return false
+}
+
+// pathID parses the :id route parameter, writing a 404 if it is not a valid ID.
+func pathID(c *gin.Context) (uint64, bool) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || id == 0 {
+		respondError(c, http.StatusNotFound, "not found")
+		return 0, false
+	}
+	return id, true
+}
+
+// respondServiceError maps service and repository errors to HTTP responses.
+// Records owned by other users are reported as 404, never 403, so their
+// existence is not revealed.
+func respondServiceError(c *gin.Context, err error) {
+	var ve *services.ValidationError
+	switch {
+	case errors.As(err, &ve):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "validation failed", "fields": ve.Fields})
+	case errors.Is(err, repository.ErrNotFound):
+		respondError(c, http.StatusNotFound, "not found")
+	default:
+		respondInternal(c, err)
+	}
 }
 
 func validationMessage(fe validator.FieldError) string {

@@ -36,6 +36,9 @@ type Session struct {
 type AuthService struct {
 	Users    repository.UserRepository
 	Sessions repository.SessionRepository
+	// OnRegister runs after an account is created, so modules can seed
+	// per-user defaults (e.g. task lists) without auth depending on them.
+	OnRegister []func(ctx context.Context, user models.User) error
 }
 
 func (s AuthService) Register(ctx context.Context, name, email, password string) (models.User, error) {
@@ -50,7 +53,15 @@ func (s AuthService) Register(ctx context.Context, name, email, password string)
 	if errors.Is(err, repository.ErrDuplicate) {
 		return models.User{}, ErrEmailTaken
 	}
-	return user, err
+	if err != nil {
+		return models.User{}, err
+	}
+	for _, hook := range s.OnRegister {
+		if err := hook(ctx, user); err != nil {
+			return user, err
+		}
+	}
+	return user, nil
 }
 
 func (s AuthService) Login(ctx context.Context, email, password, userAgent, ip string) (models.User, Session, error) {

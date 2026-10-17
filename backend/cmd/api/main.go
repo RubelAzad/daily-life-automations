@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 
 	"github.com/gin-gonic/gin"
@@ -9,6 +10,7 @@ import (
 	"lifeos-ai/backend/internal/database"
 	"lifeos-ai/backend/internal/handlers"
 	"lifeos-ai/backend/internal/middleware"
+	"lifeos-ai/backend/internal/models"
 	"lifeos-ai/backend/internal/repository"
 	"lifeos-ai/backend/internal/services"
 )
@@ -37,11 +39,18 @@ func main() {
 
 	handlers.RegisterValidation()
 
+	taskLists := repository.TaskListRepository{DB: db}
+	taskListService := services.TaskListService{Lists: taskLists}
+	taskService := services.TaskService{Tasks: repository.TaskRepository{DB: db}, Lists: taskLists}
+
 	authService := services.AuthService{
-		Users:    repository.UserRepository{DB: db},
-		Sessions: repository.SessionRepository{DB: db},
+		Users:      repository.UserRepository{DB: db},
+		Sessions:   repository.SessionRepository{DB: db},
+		OnRegister: []func(context.Context, models.User) error{taskListService.CreateDefaults},
 	}
 	authHandler := handlers.AuthHandler{Auth: authService, SecureCookies: cfg.AppEnv != "local"}
+	taskHandler := handlers.TaskHandler{Tasks: taskService}
+	taskListHandler := handlers.TaskListHandler{Lists: taskListService}
 
 	api := router.Group("/api/v1")
 	api.GET("/health", handlers.HealthHandler{DB: db}.Get)
@@ -51,6 +60,17 @@ func main() {
 
 	protected := api.Group("", middleware.RequireAuth(authService))
 	protected.GET("/auth/me", authHandler.Me)
+
+	protected.GET("/tasks", taskHandler.List)
+	protected.POST("/tasks", taskHandler.Create)
+	protected.GET("/tasks/:id", taskHandler.Get)
+	protected.PATCH("/tasks/:id", taskHandler.Update)
+	protected.DELETE("/tasks/:id", taskHandler.Delete)
+
+	protected.GET("/task-lists", taskListHandler.List)
+	protected.POST("/task-lists", taskListHandler.Create)
+	protected.PATCH("/task-lists/:id", taskListHandler.Update)
+	protected.DELETE("/task-lists/:id", taskListHandler.Delete)
 
 	log.Printf("LifeOS API listening on :%s", cfg.Port)
 	log.Fatal(router.Run(":" + cfg.Port))

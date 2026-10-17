@@ -28,7 +28,7 @@ export default function AuthForm({ mode }: { mode: Mode }) {
       } else {
         await login({ email, password });
       }
-      router.replace("/");
+      router.replace("/tasks");
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
