@@ -22,8 +22,8 @@ All 20 modules from [DAILY_LIFE_MODULES.md](DAILY_LIFE_MODULES.md), split into s
 
 | Step | Scope | Module | Status |
 |---|---|---|---|
-| 2.1 | LLM client, typed tool allowlist, AI audit log | 17 | ⬜ Next |
-| 2.2 | Chat endpoint: intent → planner → tools (`create_task`, `list_tasks`, …) | 17 | ⬜ |
+| 2.1 | LLM client, typed tool allowlist, AI audit log | 17 | ✅ Done |
+| 2.2 | Chat endpoint: intent → planner → tools (`create_task`, `list_tasks`, …) | 17 | ⬜ Next |
 | 2.3 | AI daily plan, morning briefing, end-of-day summary | 1, 17 | ⬜ |
 | 2.4 | Personal knowledge search across notes and files | 9, 17 | ⬜ |
 

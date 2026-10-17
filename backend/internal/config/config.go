@@ -18,6 +18,23 @@ type Config struct {
 	// StorageDir holds uploaded files (local development storage).
 	StorageDir     string
 	MaxUploadBytes int64
+	AI             AIConfig
+}
+
+// AIConfig configures the LLM. With no API key the AI features report
+// "not configured" instead of failing.
+type AIConfig struct {
+	Provider  string // "anthropic", or "fake" (local development and tests only)
+	APIKey    string // never logged or returned by the API
+	Model     string
+	BaseURL   string
+	MaxTokens int
+	Timeout   time.Duration
+}
+
+// Enabled reports whether AI requests can be made.
+func (a AIConfig) Enabled() bool {
+	return a.Provider == "fake" || (a.Provider == "anthropic" && a.APIKey != "")
 }
 
 type DBConfig struct {
@@ -77,6 +94,30 @@ func Load() (Config, error) {
 		return cfg, fmt.Errorf("MAX_UPLOAD_MB must be a number between 1 and 500")
 	}
 	cfg.MaxUploadBytes = int64(maxMB) << 20
+
+	cfg.AI = AIConfig{
+		Provider: getEnv("AI_PROVIDER", "anthropic"),
+		APIKey:   os.Getenv("ANTHROPIC_API_KEY"),
+		Model:    getEnv("AI_MODEL", "claude-sonnet-5-5"),
+		BaseURL:  getEnv("ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
+	}
+	switch cfg.AI.Provider {
+	case "anthropic":
+	case "fake":
+		if cfg.AppEnv != "local" {
+			return cfg, fmt.Errorf("AI_PROVIDER=fake is only allowed when APP_ENV=local")
+		}
+	default:
+		return cfg, fmt.Errorf("AI_PROVIDER must be anthropic or fake")
+	}
+	if cfg.AI.MaxTokens, err = strconv.Atoi(getEnv("AI_MAX_TOKENS", "2048")); err != nil || cfg.AI.MaxTokens < 64 || cfg.AI.MaxTokens > 32000 {
+		return cfg, fmt.Errorf("AI_MAX_TOKENS must be a number between 64 and 32000")
+	}
+	timeout, err := strconv.Atoi(getEnv("AI_TIMEOUT_SECONDS", "60"))
+	if err != nil || timeout < 5 || timeout > 600 {
+		return cfg, fmt.Errorf("AI_TIMEOUT_SECONDS must be a number between 5 and 600")
+	}
+	cfg.AI.Timeout = time.Duration(timeout) * time.Second
 	return cfg, nil
 }
 

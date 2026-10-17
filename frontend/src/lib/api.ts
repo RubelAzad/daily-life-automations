@@ -623,3 +623,67 @@ export async function getToday() {
 export async function carryForward(input: { task_ids?: number[]; to?: "today" | "tomorrow" }) {
   return request<{ data: Task[]; meta: { moved: number } }>("/tasks/carry-forward", { method: "POST", body: JSON.stringify(input) });
 }
+
+// ---- AI assistant ----------------------------------------------------------
+
+export type AIRisk = "read" | "low" | "high";
+export type AITool = { name: string; description: string; risk: AIRisk };
+
+export type AIStatus = {
+  enabled: boolean;
+  provider?: string;
+  model?: string;
+  reason?: string; // why it's off
+  tools: AITool[];
+};
+
+export type AIActionStatus = "succeeded" | "failed" | "pending_approval" | "running" | "rejected" | "expired";
+
+/** One audit-log entry: a model call (metadata only) or a tool call. */
+export type AIAction = {
+  id: number;
+  kind: "tool" | "llm_call";
+  source: string;
+  tool: string | null;
+  risk: AIRisk | null;
+  summary: string | null;
+  input: unknown; // redacted
+  output: unknown; // redacted
+  status: AIActionStatus;
+  error: string | null;
+  model: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  duration_ms: number | null;
+  decided_at: string | null;
+  executed_at: string | null;
+  expires_at: string | null; // while pending
+  created_at: string;
+};
+
+export type AIPing = { reply: string; model: string; duration_ms: number; input_tokens: number; output_tokens: number; action_id: number };
+
+export async function getAIStatus() {
+  return (await request<{ data: AIStatus }>("/ai/status")).data;
+}
+
+export async function pingAI() {
+  return (await request<{ data: AIPing }>("/ai/ping", { method: "POST" })).data;
+}
+
+export function listAIActions(query: { status?: string; kind?: "tool" | "llm_call"; page?: number; per_page?: number } = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== "") params.set(key, String(value));
+  }
+  return request<{ data: AIAction[]; meta: PageMeta }>(`/ai/actions?${params}`);
+}
+
+/** Runs a pending action; its outcome is in the returned status/output/error. */
+export async function approveAIAction(id: number) {
+  return (await request<{ data: AIAction }>(`/ai/actions/${id}/approve`, { method: "POST" })).data;
+}
+
+export async function rejectAIAction(id: number) {
+  return (await request<{ data: AIAction }>(`/ai/actions/${id}/reject`, { method: "POST" })).data;
+}

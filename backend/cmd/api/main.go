@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"lifeos-ai/backend/internal/ai"
 	"lifeos-ai/backend/internal/config"
 	"lifeos-ai/backend/internal/database"
 	"lifeos-ai/backend/internal/handlers"
@@ -64,6 +65,24 @@ func main() {
 
 	settingsService := services.SettingsService{Settings: repository.SettingsRepository{DB: db}}
 	settingsHandler := handlers.SettingsHandler{Settings: settingsService}
+	aiService := ai.NewService(
+		ai.NewClient(cfg.AI.Provider, cfg.AI.APIKey, cfg.AI.Model, cfg.AI.BaseURL, cfg.AI.MaxTokens, cfg.AI.Timeout),
+		ai.Executor{
+			Tools: ai.BuiltinTools(ai.Deps{
+				Tasks: taskService, Calendar: calendarService, Notes: noteHandler.Notes, Reminders: reminderHandler.Reminders,
+				Today: todayHandler.Today,
+			}),
+			Actions:  repository.AIActionRepository{DB: db},
+			Settings: repository.SettingsRepository{DB: db},
+		},
+	)
+	aiHandler := handlers.AIHandler{AI: aiService}
+	if st := aiService.Status(); st.Enabled {
+		log.Printf("AI enabled: provider=%s model=%s", st.Provider, st.Model)
+	} else {
+		log.Printf("AI disabled: set ANTHROPIC_API_KEY in .env to enable it")
+	}
+
 	authService := services.AuthService{
 		Users:    repository.UserRepository{DB: db},
 		Sessions: repository.SessionRepository{DB: db},
@@ -90,6 +109,13 @@ func main() {
 	protected.PATCH("/settings", settingsHandler.Update)
 
 	protected.GET("/today", todayHandler.Get)
+
+	protected.GET("/ai/status", aiHandler.Status)
+	protected.POST("/ai/ping", aiHandler.Ping)
+	protected.GET("/ai/actions", aiHandler.ListActions)
+	protected.GET("/ai/actions/:id", aiHandler.GetAction)
+	protected.POST("/ai/actions/:id/approve", aiHandler.Approve)
+	protected.POST("/ai/actions/:id/reject", aiHandler.Reject)
 
 	protected.GET("/tasks", taskHandler.List)
 	protected.POST("/tasks", taskHandler.Create)
