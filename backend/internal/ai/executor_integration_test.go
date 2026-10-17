@@ -91,7 +91,7 @@ func (f fixture) setMode(t *testing.T, mode string) {
 
 func (f fixture) propose(t *testing.T, tool, input string) Result {
 	t.Helper()
-	r, err := f.exec.Propose(f.ctx, f.user, "test", tool, json.RawMessage(input))
+	r, err := f.exec.Propose(f.ctx, f.user, Origin{Source: "test"}, tool, json.RawMessage(input))
 	if err != nil {
 		t.Fatal(err)
 	}

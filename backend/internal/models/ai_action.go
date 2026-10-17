@@ -21,13 +21,15 @@ var AIActionStatuses = []string{AIStatusSucceeded, AIStatusFailed, AIStatusPendi
 
 // AIAction is one entry in the AI audit log.
 type AIAction struct {
-	ID      uint64  `json:"id"`
-	UserID  uint64  `json:"-"`
-	Kind    string  `json:"kind"`
-	Source  string  `json:"source"`
-	Tool    *string `json:"tool"`
-	Risk    *string `json:"risk"`
-	Summary *string `json:"summary"`
+	ID     uint64 `json:"id"`
+	UserID uint64 `json:"-"`
+	Kind   string `json:"kind"`
+	Source string `json:"source"`
+	// ConversationID is the chat the action came from, if any.
+	ConversationID *uint64 `json:"conversation_id"`
+	Tool           *string `json:"tool"`
+	Risk           *string `json:"risk"`
+	Summary        *string `json:"summary"`
 	// Input and Output are redacted copies for display.
 	Input  json.RawMessage `json:"input"`
 	Output json.RawMessage `json:"output"`
@@ -45,4 +47,26 @@ type AIAction struct {
 	ExpiresAt *time.Time `json:"expires_at"`
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+// AIConversation is a chat with the assistant.
+type AIConversation struct {
+	ID        uint64    `json:"id"`
+	UserID    uint64    `json:"-"`
+	Title     string    `json:"title"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	// Messages is set only on the detail view (a pointer so an empty chat
+	// still returns "messages": []).
+	Messages *[]AIMessage `json:"messages,omitempty"`
+}
+
+// AIMessage is one turn, as an array of content blocks: text, tool_use
+// (assistant) and tool_result (user role, sent back by the app).
+type AIMessage struct {
+	ID             uint64          `json:"id"`
+	ConversationID uint64          `json:"-"`
+	Role           string          `json:"role"`
+	Content        json.RawMessage `json:"content"`
+	CreatedAt      time.Time       `json:"created_at"`
 }

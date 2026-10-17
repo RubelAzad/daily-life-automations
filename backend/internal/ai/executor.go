@@ -34,6 +34,12 @@ type Executor struct {
 	Now      func() time.Time // overridable for tests
 }
 
+// Origin says where a tool call came from, for the audit log.
+type Origin struct {
+	Source         string // chat | automation | test
+	ConversationID *uint64
+}
+
 // Result is what the assistant learns about a tool call.
 type Result struct {
 	ActionID uint64 `json:"action_id"`
@@ -54,8 +60,11 @@ func (e Executor) now() time.Time {
 // run at once; changes run at once or wait for approval depending on their
 // risk and the user's ai_approval_mode. The returned error is only for
 // internal failures; tool and input errors are reported in the Result.
-func (e Executor) Propose(ctx context.Context, userID uint64, source, name string, input json.RawMessage) (Result, error) {
-	action := models.AIAction{UserID: userID, Kind: models.AIActionTool, Source: source, Tool: strPtr(truncateRunes(name, 64)), Input: RedactJSON(input)}
+func (e Executor) Propose(ctx context.Context, userID uint64, origin Origin, name string, input json.RawMessage) (Result, error) {
+	action := models.AIAction{
+		UserID: userID, Kind: models.AIActionTool, Source: origin.Source, ConversationID: origin.ConversationID,
+		Tool: strPtr(truncateRunes(name, 64)), Input: RedactJSON(input),
+	}
 
 	tool, ok := e.Tools.Get(name)
 	if !ok {
