@@ -177,6 +177,7 @@ func main() {
 	protected.GET("/files/:id/download", noteHandler.Download)
 	protected.DELETE("/files/:id", noteHandler.DeleteFile)
 	protected.GET("/search", searchHandler.Search)
+	protected.GET("/system/status", handlers.SystemHandler{DB: db}.Status)
 	protected.GET("/tags", noteHandler.ListTags)
 	protected.PATCH("/tags/:id", noteHandler.UpdateTag)
 	protected.DELETE("/tags/:id", noteHandler.DeleteTag)
