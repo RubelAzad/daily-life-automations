@@ -54,11 +54,12 @@ func (e *APIError) Retryable() bool {
 }
 
 type anthropicRequest struct {
-	Model     string          `json:"model"`
-	MaxTokens int             `json:"max_tokens"`
-	System    []systemBlock   `json:"system,omitempty"`
-	Messages  []Message       `json:"messages"`
-	Tools     []anthropicTool `json:"tools,omitempty"`
+	Model      string          `json:"model"`
+	MaxTokens  int             `json:"max_tokens"`
+	System     []systemBlock   `json:"system,omitempty"`
+	Messages   []Message       `json:"messages"`
+	Tools      []anthropicTool `json:"tools,omitempty"`
+	ToolChoice *ToolChoice     `json:"tool_choice,omitempty"`
 }
 
 type cacheControl struct {
@@ -79,7 +80,7 @@ type anthropicTool struct {
 // buildRequest marks the end of the tools and the static system prompt as a
 // cache breakpoint when caching is requested.
 func buildRequest(model string, maxTokens int, req Request) anthropicRequest {
-	out := anthropicRequest{Model: model, MaxTokens: maxTokens, Messages: req.Messages}
+	out := anthropicRequest{Model: model, MaxTokens: maxTokens, Messages: req.Messages, ToolChoice: req.ToolChoice}
 	var mark *cacheControl
 	if req.Cache {
 		mark = &cacheControl{Type: "ephemeral"}

@@ -78,7 +78,14 @@ func main() {
 		repository.AIConversationRepository{DB: db},
 		repository.UserRepository{DB: db},
 	)
-	aiHandler := handlers.AIHandler{AI: aiService}
+	aiDeps := ai.Deps{
+		Tasks: taskService, Calendar: calendarService, Notes: noteHandler.Notes, Reminders: reminderHandler.Reminders,
+		Today: todayHandler.Today,
+	}
+	aiHandler := handlers.AIHandler{
+		AI:      aiService,
+		Briefer: ai.NewBriefer(aiService, aiDeps, repository.BriefingRepository{DB: db}, repository.NotificationRepository{DB: db}),
+	}
 	if st := aiService.Status(); st.Enabled {
 		log.Printf("AI enabled: provider=%s model=%s", st.Provider, st.Model)
 	} else {
@@ -118,6 +125,9 @@ func main() {
 	protected.GET("/ai/actions/:id", aiHandler.GetAction)
 	protected.POST("/ai/actions/:id/approve", aiHandler.Approve)
 	protected.POST("/ai/actions/:id/reject", aiHandler.Reject)
+	protected.GET("/ai/briefings/today", aiHandler.TodayBriefings)
+	protected.GET("/ai/briefings", aiHandler.ListBriefings)
+	protected.POST("/ai/briefings", aiHandler.CreateBriefing)
 	protected.GET("/ai/conversations", aiHandler.ListConversations)
 	protected.POST("/ai/conversations", aiHandler.CreateConversation)
 	protected.GET("/ai/conversations/:id", aiHandler.GetConversation)

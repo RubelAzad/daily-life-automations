@@ -24,6 +24,11 @@ type UpdateSettingsInput struct {
 	QuietHoursStart   Optional[string] `json:"quiet_hours_start"`
 	QuietHoursEnd     Optional[string] `json:"quiet_hours_end"`
 	AIApprovalMode    Optional[string] `json:"ai_approval_mode"`
+
+	MorningBriefingEnabled Optional[bool]   `json:"morning_briefing_enabled"`
+	MorningBriefingTime    Optional[string] `json:"morning_briefing_time"`
+	EveningSummaryEnabled  Optional[bool]   `json:"evening_summary_enabled"`
+	EveningSummaryTime     Optional[string] `json:"evening_summary_time"`
 }
 
 var clockPattern = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
@@ -85,6 +90,27 @@ func (s SettingsService) Update(ctx context.Context, userID uint64, in UpdateSet
 	if in.AIApprovalMode.Set {
 		settings.AIApprovalMode = in.AIApprovalMode.Value
 		c.oneOf("ai_approval_mode", in.AIApprovalMode.Value, models.ApprovalModes)
+	}
+	for _, t := range []struct {
+		field string
+		in    Optional[bool]
+		dst   *bool
+	}{
+		{"morning_briefing_enabled", in.MorningBriefingEnabled, &settings.MorningBriefingEnabled},
+		{"evening_summary_enabled", in.EveningSummaryEnabled, &settings.EveningSummaryEnabled},
+	} {
+		if t.in.Set {
+			if t.in.Null {
+				c.fail(t.field, "must be true or false")
+			}
+			*t.dst = t.in.Value
+		}
+	}
+	if in.MorningBriefingTime.Set {
+		settings.MorningBriefingTime = c.clock("morning_briefing_time", in.MorningBriefingTime)
+	}
+	if in.EveningSummaryTime.Set {
+		settings.EveningSummaryTime = c.clock("evening_summary_time", in.EveningSummaryTime)
 	}
 	if err := c.err(); err != nil {
 		return models.UserSettings{}, err
