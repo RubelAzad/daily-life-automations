@@ -19,6 +19,7 @@ func (h ReminderHandler) List(c *gin.Context) {
 		Status:  c.Query("status"),
 		TaskID:  c.Query("task_id"),
 		EventID: c.Query("event_id"),
+		NoteID:  c.Query("note_id"),
 		Page:    c.Query("page"),
 		PerPage: c.Query("per_page"),
 	})

@@ -195,6 +195,20 @@ func (w ReminderWorker) buildNotification(ctx context.Context, tx repository.DBT
 			r.Status = models.ReminderSent
 		}
 
+	case "note":
+		note, err := repository.NoteRepository{DB: tx}.Get(ctx, r.UserID, *r.NoteID)
+		if err != nil {
+			return nil, err
+		}
+		if note.Archived || note.ExpiresOn == nil {
+			r.Status = models.ReminderCancelled // archived or no longer expiring
+			return nil, nil
+		}
+		n.Title = note.Title
+		n.Link = strPtr(fmt.Sprintf("/notes?id=%d", note.ID))
+		n.Body = withNote("Expires on "+note.ExpiresOn.String(), r.Note) // a calendar date: no time zone needed
+		r.Status = models.ReminderSent
+
 	default:
 		n.Title = r.SubjectTitle
 		n.Link = strPtr("/reminders")
