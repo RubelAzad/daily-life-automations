@@ -75,6 +75,8 @@ func main() {
 			Actions:  repository.AIActionRepository{DB: db},
 			Settings: repository.SettingsRepository{DB: db},
 		},
+		repository.AIConversationRepository{DB: db},
+		repository.UserRepository{DB: db},
 	)
 	aiHandler := handlers.AIHandler{AI: aiService}
 	if st := aiService.Status(); st.Enabled {
@@ -116,6 +118,11 @@ func main() {
 	protected.GET("/ai/actions/:id", aiHandler.GetAction)
 	protected.POST("/ai/actions/:id/approve", aiHandler.Approve)
 	protected.POST("/ai/actions/:id/reject", aiHandler.Reject)
+	protected.GET("/ai/conversations", aiHandler.ListConversations)
+	protected.POST("/ai/conversations", aiHandler.CreateConversation)
+	protected.GET("/ai/conversations/:id", aiHandler.GetConversation)
+	protected.DELETE("/ai/conversations/:id", aiHandler.DeleteConversation)
+	protected.POST("/ai/conversations/:id/messages", aiHandler.SendMessage)
 
 	protected.GET("/tasks", taskHandler.List)
 	protected.POST("/tasks", taskHandler.Create)

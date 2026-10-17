@@ -54,11 +54,50 @@ func (e *APIError) Retryable() bool {
 }
 
 type anthropicRequest struct {
-	Model     string     `json:"model"`
-	MaxTokens int        `json:"max_tokens"`
-	System    string     `json:"system,omitempty"`
-	Messages  []Message  `json:"messages"`
-	Tools     []ToolSpec `json:"tools,omitempty"`
+	Model     string          `json:"model"`
+	MaxTokens int             `json:"max_tokens"`
+	System    []systemBlock   `json:"system,omitempty"`
+	Messages  []Message       `json:"messages"`
+	Tools     []anthropicTool `json:"tools,omitempty"`
+}
+
+type cacheControl struct {
+	Type string `json:"type"` // "ephemeral"
+}
+
+type systemBlock struct {
+	Type         string        `json:"type"`
+	Text         string        `json:"text"`
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
+}
+
+type anthropicTool struct {
+	ToolSpec
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
+}
+
+// buildRequest marks the end of the tools and the static system prompt as a
+// cache breakpoint when caching is requested.
+func buildRequest(model string, maxTokens int, req Request) anthropicRequest {
+	out := anthropicRequest{Model: model, MaxTokens: maxTokens, Messages: req.Messages}
+	var mark *cacheControl
+	if req.Cache {
+		mark = &cacheControl{Type: "ephemeral"}
+	}
+	if req.System != "" {
+		out.System = append(out.System, systemBlock{Type: "text", Text: req.System, CacheControl: mark})
+	}
+	if req.SystemSuffix != "" {
+		out.System = append(out.System, systemBlock{Type: "text", Text: req.SystemSuffix})
+	}
+	for i, t := range req.Tools {
+		tool := anthropicTool{ToolSpec: t}
+		if i == len(req.Tools)-1 {
+			tool.CacheControl = mark
+		}
+		out.Tools = append(out.Tools, tool)
+	}
+	return out
 }
 
 type anthropicResponse struct {
@@ -83,9 +122,7 @@ func (c AnthropicClient) Complete(ctx context.Context, req Request) (Response, e
 	if maxTokens <= 0 {
 		maxTokens = c.MaxTokens
 	}
-	body, err := json.Marshal(anthropicRequest{
-		Model: c.ModelName, MaxTokens: maxTokens, System: req.System, Messages: req.Messages, Tools: req.Tools,
-	})
+	body, err := json.Marshal(buildRequest(c.ModelName, maxTokens, req))
 	if err != nil {
 		return Response{}, err
 	}

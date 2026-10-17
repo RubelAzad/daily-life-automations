@@ -119,13 +119,18 @@ export default function AIView() {
       <AppHeader user={user} />
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">AI assistant</h1>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight">AI activity</h1>
+          <Link href="/ai" className="text-sm underline">
+            Back to chat
+          </Link>
+        </div>
         <p className="text-sm text-zinc-500">
           Everything the assistant does is listed here. It can only use the actions below, and changes wait for your approval as set in{" "}
           <Link href="/settings" className="underline">
             Settings
           </Link>
-          . Chat arrives in the next step.
+          .
         </p>
       </div>
 

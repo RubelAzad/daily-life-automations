@@ -44,9 +44,16 @@ ANTHROPIC_API_KEY=sk-ant-...      # from https://console.anthropic.com/ — neve
 AI_MODEL=claude-sonnet-5-5        # optional
 ```
 
-Restart the API. The startup log says `AI enabled` or `AI disabled`, and the **AI** page has a *Test connection* button. Each test is a real (very small) paid call.
+Restart the API. The startup log says `AI enabled` or `AI disabled`. **AI** in the menu opens the chat; *Activity log & approvals* (`/ai/activity`) has a *Test connection* button. Each chat message and test is a real, paid call (usually a few cents or less).
 
-For offline development, `AI_PROVIDER=fake` uses a stand-in that makes no network calls (only allowed with `APP_ENV=local`).
+For offline development, `AI_PROVIDER=fake` uses a stand-in that makes no network calls (only allowed with `APP_ENV=local`). It follows scripts typed in the chat:
+
+| Script | Effect |
+|---|---|
+| `fake:tool create_task {"title":"Milk"}` | Calls that tool, then summarises the results. Join several with ` && `. |
+| `fake:loop` | Calls a tool until the step limit is reached |
+| `fake:error` | Fails at once |
+| `fake:error-after-tool` | Calls one tool, then fails |
 
 Executor tests that use the real database run separately: `go test -tags integration ./internal/ai/`.
 

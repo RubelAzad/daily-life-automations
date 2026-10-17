@@ -20,13 +20,20 @@ var ErrRateLimited = errors.New("please wait a few seconds before testing again"
 
 // Service is what the HTTP handlers use.
 type Service struct {
-	Client   Client // nil when AI is not configured
-	Executor Executor
-	pings    *pingLimiter
+	Client        Client // nil when AI is not configured
+	Executor      Executor
+	Conversations repository.AIConversationRepository
+	Users         repository.UserRepository
+	pings         *pingLimiter
+	chat          *chatState
 }
 
-func NewService(client Client, executor Executor) Service {
-	return Service{Client: client, Executor: executor, pings: &pingLimiter{last: map[uint64]time.Time{}}}
+func NewService(client Client, executor Executor, conversations repository.AIConversationRepository, users repository.UserRepository) Service {
+	return Service{
+		Client: client, Executor: executor, Conversations: conversations, Users: users,
+		pings: &pingLimiter{last: map[uint64]time.Time{}},
+		chat:  newChatState(),
+	}
 }
 
 type ToolInfo struct {
@@ -80,7 +87,7 @@ func (s Service) Ping(ctx context.Context, userID uint64) (PingResult, error) {
 		Messages:  []Message{UserText("Reply with the single word OK.")},
 		MaxTokens: 16,
 	})
-	id, recErr := s.RecordModelCall(ctx, userID, "ping", s.Client.Model(), resp, time.Since(start), err)
+	id, recErr := s.RecordModelCall(ctx, userID, Origin{Source: "ping"}, s.Client.Model(), resp, time.Since(start), err)
 	if err != nil {
 		return PingResult{}, err
 	}
@@ -98,12 +105,15 @@ func (s Service) Ping(ctx context.Context, userID uint64) (PingResult, error) {
 }
 
 // RecordModelCall logs a model call's metadata (never the prompt or reply).
-func (s Service) RecordModelCall(ctx context.Context, userID uint64, source, model string, resp Response, took time.Duration, callErr error) (uint64, error) {
+func (s Service) RecordModelCall(ctx context.Context, userID uint64, origin Origin, model string, resp Response, took time.Duration, callErr error) (uint64, error) {
 	ms := int(took / time.Millisecond)
-	in, out := resp.Usage.InputTokens, resp.Usage.OutputTokens
+	// Input tokens include the cached part, so totals are comparable.
+	in := resp.Usage.InputTokens + resp.Usage.CacheReadInputTokens + resp.Usage.CacheCreationInputTokens
+	out := resp.Usage.OutputTokens
 	now := time.Now().UTC()
 	a := models.AIAction{
-		UserID: userID, Kind: models.AIActionLLMCall, Source: source, Model: strPtr(model), Status: models.AIStatusSucceeded,
+		UserID: userID, Kind: models.AIActionLLMCall, Source: origin.Source, ConversationID: origin.ConversationID,
+		Model: strPtr(model), Status: models.AIStatusSucceeded,
 		InputTokens: &in, OutputTokens: &out, DurationMS: &ms, ExecutedAt: &now,
 	}
 	if resp.Model != "" {
@@ -118,10 +128,11 @@ func (s Service) RecordModelCall(ctx context.Context, userID uint64, source, mod
 }
 
 type ListActionsInput struct {
-	Status  string // comma-separated statuses
-	Kind    string
-	Page    string
-	PerPage string
+	Status         string // comma-separated statuses
+	Kind           string
+	ConversationID string
+	Page           string
+	PerPage        string
 }
 
 func (s Service) ListActions(ctx context.Context, userID uint64, in ListActionsInput) ([]models.AIAction, services.PageMeta, error) {
@@ -138,6 +149,14 @@ func (s Service) ListActions(ctx context.Context, userID uint64, in ListActionsI
 	}
 	if f.Kind != "" && f.Kind != models.AIActionTool && f.Kind != models.AIActionLLMCall {
 		fields["kind"] = "must be one of: tool, llm_call"
+	}
+	if in.ConversationID != "" {
+		id, err := strconv.ParseUint(in.ConversationID, 10, 64)
+		if err != nil {
+			fields["conversation_id"] = "must be an ID"
+		} else {
+			f.ConversationID = &id
+		}
 	}
 	meta := services.PageMeta{Page: 1, PerPage: 20}
 	for key, raw := range map[string]string{"page": in.Page, "per_page": in.PerPage} {

@@ -25,7 +25,13 @@ type Client interface {
 }
 
 type Request struct {
-	System    string
+	System string
+	// SystemSuffix follows System; it holds per-request context (the time,
+	// recent updates) so that System and the tools can be cached.
+	SystemSuffix string
+	// Cache asks the provider to cache the tools and System between calls,
+	// which makes multi-step chat turns cheaper and faster.
+	Cache     bool
 	Messages  []Message
 	Tools     []ToolSpec
 	MaxTokens int // 0 uses the client's default
@@ -66,8 +72,10 @@ type Response struct {
 }
 
 type Usage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
 }
 
 // Text joins the response's text blocks.

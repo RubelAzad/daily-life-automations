@@ -644,6 +644,7 @@ export type AIAction = {
   id: number;
   kind: "tool" | "llm_call";
   source: string;
+  conversation_id: number | null;
   tool: string | null;
   risk: AIRisk | null;
   summary: string | null;
@@ -671,7 +672,7 @@ export async function pingAI() {
   return (await request<{ data: AIPing }>("/ai/ping", { method: "POST" })).data;
 }
 
-export function listAIActions(query: { status?: string; kind?: "tool" | "llm_call"; page?: number; per_page?: number } = {}) {
+export function listAIActions(query: { status?: string; kind?: "tool" | "llm_call"; conversation_id?: number; page?: number; per_page?: number } = {}) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
     if (value !== undefined && value !== "") params.set(key, String(value));
@@ -686,4 +687,49 @@ export async function approveAIAction(id: number) {
 
 export async function rejectAIAction(id: number) {
   return (await request<{ data: AIAction }>(`/ai/actions/${id}/reject`, { method: "POST" })).data;
+}
+
+// ---- Chat ------------------------------------------------------------------
+
+/** A content block in the model's format. tool_result blocks are sent back by the app. */
+export type ChatBlock =
+  | { type: "text"; text: string }
+  | { type: "tool_use"; id: string; name: string; input: unknown }
+  | { type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean };
+
+export type ChatMessage = { id: number; role: "user" | "assistant"; content: ChatBlock[]; created_at: string };
+
+export type Conversation = { id: number; title: string; created_at: string; updated_at: string; messages?: ChatMessage[] };
+
+/** What a tool_result's content holds (JSON). */
+export type ToolResult = { action_id: number; status: AIActionStatus; summary?: string; output?: unknown; error?: string };
+
+export function listConversations(query: { page?: number; per_page?: number } = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined) params.set(key, String(value));
+  }
+  return request<{ data: Conversation[]; meta: PageMeta }>(`/ai/conversations?${params}`);
+}
+
+export async function createConversation(title?: string) {
+  return (await request<{ data: Conversation }>("/ai/conversations", { method: "POST", body: JSON.stringify({ title: title ?? "" }) })).data;
+}
+
+export async function getConversation(id: number) {
+  return (await request<{ data: Conversation }>(`/ai/conversations/${id}`)).data;
+}
+
+export function deleteConversation(id: number) {
+  return request<void>(`/ai/conversations/${id}`, { method: "DELETE" });
+}
+
+/** Runs one chat turn; can take several seconds. */
+export async function sendChatMessage(conversationId: number, text: string) {
+  return (
+    await request<{ data: { messages: ChatMessage[]; actions: AIAction[] } }>(`/ai/conversations/${conversationId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    })
+  ).data;
 }

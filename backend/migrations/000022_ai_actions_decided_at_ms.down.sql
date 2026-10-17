@@ -1,0 +1,1 @@
+ALTER TABLE ai_actions MODIFY decided_at TIMESTAMP NULL;

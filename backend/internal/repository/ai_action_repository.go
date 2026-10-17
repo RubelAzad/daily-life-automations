@@ -17,21 +17,22 @@ type AIActionRepository struct {
 }
 
 type AIActionFilter struct {
-	Statuses []string
-	Kind     string
-	Limit    int
-	Offset   int
+	Statuses       []string
+	Kind           string
+	ConversationID *uint64
+	Limit          int
+	Offset         int
 }
 
-const aiActionColumns = `id, user_id, kind, source, tool, risk, summary, input, pending_input, output, status, error,
+const aiActionColumns = `id, user_id, kind, source, conversation_id, tool, risk, summary, input, pending_input, output, status, error,
 	model, input_tokens, output_tokens, duration_ms, decided_at, executed_at, created_at, updated_at`
 
 func (r AIActionRepository) Create(ctx context.Context, a models.AIAction) (uint64, error) {
 	res, err := r.DB.ExecContext(ctx,
-		`INSERT INTO ai_actions (user_id, kind, source, tool, risk, summary, input, pending_input, output, status, error,
+		`INSERT INTO ai_actions (user_id, kind, source, conversation_id, tool, risk, summary, input, pending_input, output, status, error,
 		                         model, input_tokens, output_tokens, duration_ms, decided_at, executed_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.UserID, a.Kind, a.Source, a.Tool, a.Risk, a.Summary, jsonArg(a.Input), jsonArg(a.PendingInput), jsonArg(a.Output),
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.UserID, a.Kind, a.Source, a.ConversationID, a.Tool, a.Risk, a.Summary, jsonArg(a.Input), jsonArg(a.PendingInput), jsonArg(a.Output),
 		a.Status, a.Error, a.Model, a.InputTokens, a.OutputTokens, a.DurationMS, utcPtr(a.DecidedAt), utcPtr(a.ExecutedAt))
 	if err != nil {
 		return 0, err
@@ -62,6 +63,10 @@ func (r AIActionRepository) List(ctx context.Context, userID uint64, f AIActionF
 	if f.Kind != "" {
 		where = append(where, "kind = ?")
 		args = append(args, f.Kind)
+	}
+	if f.ConversationID != nil {
+		where = append(where, "conversation_id = ?")
+		args = append(args, *f.ConversationID)
 	}
 	whereSQL := strings.Join(where, " AND ")
 
@@ -116,6 +121,29 @@ func (r AIActionRepository) Decide(ctx context.Context, userID, id uint64, statu
 	return n == 1, err
 }
 
+// ListDecidedSince returns a conversation's tool actions that the user
+// approved, rejected or that expired after since, oldest first.
+func (r AIActionRepository) ListDecidedSince(ctx context.Context, userID, conversationID uint64, since time.Time) ([]models.AIAction, error) {
+	rows, err := r.DB.QueryContext(ctx,
+		`SELECT `+aiActionColumns+` FROM ai_actions
+		  WHERE user_id = ? AND conversation_id = ? AND kind = 'tool' AND decided_at > ?
+		  ORDER BY decided_at, id LIMIT 50`,
+		userID, conversationID, since.UTC())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []models.AIAction{}
+	for rows.Next() {
+		a, err := scanAIAction(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 // Finish records the outcome of an approved action and drops its stored input.
 func (r AIActionRepository) Finish(ctx context.Context, a models.AIAction) error {
 	_, err := r.DB.ExecContext(ctx,
@@ -130,7 +158,7 @@ func scanAIAction(row rowScanner) (models.AIAction, error) {
 		a                      models.AIAction
 		input, pending, output []byte
 	)
-	err := row.Scan(&a.ID, &a.UserID, &a.Kind, &a.Source, &a.Tool, &a.Risk, &a.Summary, &input, &pending, &output, &a.Status, &a.Error,
+	err := row.Scan(&a.ID, &a.UserID, &a.Kind, &a.Source, &a.ConversationID, &a.Tool, &a.Risk, &a.Summary, &input, &pending, &output, &a.Status, &a.Error,
 		&a.Model, &a.InputTokens, &a.OutputTokens, &a.DurationMS, &a.DecidedAt, &a.ExecutedAt, &a.CreatedAt, &a.UpdatedAt)
 	a.Input, a.PendingInput, a.Output = rawJSON(input), rawJSON(pending), rawJSON(output)
 	return a, err
