@@ -39,7 +39,7 @@ func main() {
 		if err != nil {
 			logger.Fatal(err)
 		}
-		logger.Printf("reminders: delivered=%d skipped=%d errors=%d", stats.Delivered, stats.Skipped, stats.Errors)
+		logger.Printf("reminders: delivered=%d skipped=%d held=%d errors=%d", stats.Delivered, stats.Skipped, stats.Held, stats.Errors)
 		return
 	}
 

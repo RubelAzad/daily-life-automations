@@ -47,6 +47,8 @@ go run ./cmd/worker -once      # process whatever is due now, then exit
 
 It's safe to run more than one worker, or to restart one at any time: each reminder is claimed with a row lock, and each notification has a unique key, so nothing is delivered twice.
 
+The worker respects each user's quiet hours (Settings page): reminders due in that window are held until it ends, and the `-once` output counts them as `held`.
+
 ## Frontend
 
 ```powershell
@@ -57,6 +59,8 @@ npm run dev
 ```
 
 Open http://localhost:3000. The home page shows the live API/database status and sign-in state; create an account at `/register`. Restart `npm run dev` after changing `.env.local`.
+
+New accounts take the browser's time zone. Check it on the Settings page (your name in the header): the server uses it for repeating dates, expiry reminders and quiet hours, while screens use the device's time zone.
 
 ## Daily run order
 

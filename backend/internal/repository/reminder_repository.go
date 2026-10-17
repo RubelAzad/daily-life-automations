@@ -199,3 +199,10 @@ func scanReminder(row rowScanner) (models.Reminder, error) {
 	rem.SetKind()
 	return rem, err
 }
+
+// ListScheduledRelativeForUser returns the user's pending offset-based event
+// and note reminders, whose fire times depend on the user's time zone.
+func (r ReminderRepository) ListScheduledRelativeForUser(ctx context.Context, userID uint64) ([]models.Reminder, error) {
+	return r.listWhere(ctx, `r.user_id = ? AND r.offset_minutes IS NOT NULL AND r.status = 'scheduled'
+		AND (r.event_id IS NOT NULL OR r.note_id IS NOT NULL)`, userID)
+}

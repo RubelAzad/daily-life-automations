@@ -293,7 +293,11 @@ func (s ReminderService) schedule(ctx context.Context, c *checker, r *models.Rem
 		if err != nil {
 			return err
 		}
-		r.RemindAt, r.OccursAt = NextEventReminder(event, *r.OffsetMinutes, now)
+		loc, err := userLocation(ctx, s.Reminders.DB, r.UserID)
+		if err != nil {
+			return err
+		}
+		r.RemindAt, r.OccursAt = NextEventReminder(event, *r.OffsetMinutes, now, loc)
 		if r.RemindAt == nil {
 			c.fail("offset_minutes", "the event has no upcoming occurrence for this reminder")
 		}
@@ -322,7 +326,11 @@ func (s ReminderService) schedule(ctx context.Context, c *checker, r *models.Rem
 			c.fail("offset_minutes", "the note has no expiry date")
 			return nil
 		}
-		r.RemindAt, r.OccursAt = NoteReminderTime(note.ExpiresOn, *r.OffsetMinutes, now)
+		loc, err := userLocation(ctx, s.Reminders.DB, r.UserID)
+		if err != nil {
+			return err
+		}
+		r.RemindAt, r.OccursAt = NoteReminderTime(note.ExpiresOn, *r.OffsetMinutes, now, loc)
 		if r.RemindAt == nil {
 			c.fail("offset_minutes", "the note has already expired")
 		}

@@ -26,8 +26,9 @@ func TaskReminderTime(due *time.Time, offsetMinutes int, now time.Time) (remindA
 
 // NextEventReminder returns the next firing for an offset-based event
 // reminder: the first occurrence starting more than offset after now. nil
-// when the event has no such occurrence (it's over).
-func NextEventReminder(e models.CalendarEvent, offsetMinutes int, now time.Time) (remindAt, occursAt *time.Time) {
+// when the event has no such occurrence (it's over). loc is the user's time
+// zone, which repeating events follow.
+func NextEventReminder(e models.CalendarEvent, offsetMinutes int, now time.Time, loc *time.Location) (remindAt, occursAt *time.Time) {
 	offset := time.Duration(offsetMinutes) * time.Minute
 	threshold := now.Add(offset)
 	var start *time.Time
@@ -36,7 +37,7 @@ func NextEventReminder(e models.CalendarEvent, offsetMinutes int, now time.Time)
 			start = &e.StartsAt
 		}
 	} else {
-		for _, o := range expandEvent(e, threshold, threshold.AddDate(0, 0, eventReminderLookahead)) {
+		for _, o := range expandEvent(e, threshold, threshold.AddDate(0, 0, eventReminderLookahead), loc) {
 			if o.StartsAt.After(threshold) {
 				s := o.StartsAt
 				start = &s
@@ -51,32 +52,33 @@ func NextEventReminder(e models.CalendarEvent, offsetMinutes int, now time.Time)
 	return &at, start
 }
 
-// noteExpiryHourUTC is the time of day an expiry date "happens".
-// TODO(step 1.8): use 09:00 in the user's time zone.
-const noteExpiryHourUTC = 9
+// noteExpiryHour is the local time of day an expiry date "happens".
+const noteExpiryHour = 9
 
-// NoteExpiryInstant is the moment a note's expiry date is reached.
-func NoteExpiryInstant(d models.Date) time.Time {
-	return d.Time.UTC().Truncate(24 * time.Hour).Add(noteExpiryHourUTC * time.Hour)
+// NoteExpiryInstant is the moment a note's expiry date is reached: 09:00 on
+// that date in loc, the user's time zone.
+func NoteExpiryInstant(d models.Date, loc *time.Location) time.Time {
+	y, m, day := d.Time.UTC().Date()
+	return time.Date(y, m, day, noteExpiryHour, 0, 0, 0, loc).UTC()
 }
 
 // NoteReminderTime returns when an expiry reminder fires and the expiry
 // moment it refers to; inactive when there is no upcoming expiry.
-func NoteReminderTime(expiresOn *models.Date, offsetMinutes int, now time.Time) (remindAt, occursAt *time.Time) {
+func NoteReminderTime(expiresOn *models.Date, offsetMinutes int, now time.Time, loc *time.Location) (remindAt, occursAt *time.Time) {
 	if expiresOn == nil {
 		return nil, nil
 	}
-	expiry := NoteExpiryInstant(*expiresOn)
+	expiry := NoteExpiryInstant(*expiresOn, loc)
 	return TaskReminderTime(&expiry, offsetMinutes, now)
 }
 
-func rescheduleNoteReminders(ctx context.Context, reminders repository.ReminderRepository, n models.Note, now time.Time) error {
+func rescheduleNoteReminders(ctx context.Context, reminders repository.ReminderRepository, n models.Note, now time.Time, loc *time.Location) error {
 	rems, err := reminders.ListRelativeForNote(ctx, n.ID)
 	if err != nil {
 		return err
 	}
 	for _, r := range rems {
-		r.RemindAt, r.OccursAt = NoteReminderTime(n.ExpiresOn, *r.OffsetMinutes, now)
+		r.RemindAt, r.OccursAt = NoteReminderTime(n.ExpiresOn, *r.OffsetMinutes, now, loc)
 		r.Status = models.ReminderScheduled
 		if err := reminders.Update(ctx, r); err != nil {
 			return err
@@ -104,13 +106,13 @@ func rescheduleTaskReminders(ctx context.Context, reminders repository.ReminderR
 
 // rescheduleEventReminders moves an event's offset-based reminders after its
 // time or recurrence changed.
-func rescheduleEventReminders(ctx context.Context, reminders repository.ReminderRepository, e models.CalendarEvent, now time.Time) error {
+func rescheduleEventReminders(ctx context.Context, reminders repository.ReminderRepository, e models.CalendarEvent, now time.Time, loc *time.Location) error {
 	rems, err := reminders.ListRelativeForEvent(ctx, e.ID)
 	if err != nil {
 		return err
 	}
 	for _, r := range rems {
-		r.RemindAt, r.OccursAt = NextEventReminder(e, *r.OffsetMinutes, now)
+		r.RemindAt, r.OccursAt = NextEventReminder(e, *r.OffsetMinutes, now, loc)
 		r.Status = models.ReminderScheduled
 		if err := reminders.Update(ctx, r); err != nil {
 			return err

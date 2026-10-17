@@ -14,10 +14,11 @@ const maxOccurrenceSteps = 10000
 // both the previous due date and now, so completing a long-overdue daily task
 // schedules the next upcoming day instead of a backlog of missed ones.
 // Occurrences are computed from anchor (the series' first due date) so
-// monthly dates don't drift. ok is false when the series has ended.
-//
-// TODO(step 1.8): compute in the user's time zone instead of UTC.
-func nextOccurrence(r models.Recurrence, anchor, previousDue, now time.Time) (next time.Time, ok bool) {
+// monthly dates don't drift. Dates are counted in loc, the user's time zone,
+// so a 09:00 task stays at 09:00 local time across daylight-saving changes.
+// ok is false when the series has ended.
+func nextOccurrence(r models.Recurrence, anchor, previousDue, now time.Time, loc *time.Location) (next time.Time, ok bool) {
+	anchor = anchor.In(loc)
 	after := previousDue
 	if now.After(after) {
 		after = now
@@ -30,7 +31,7 @@ func nextOccurrence(r models.Recurrence, anchor, previousDue, now time.Time) (ne
 		if r.Until != nil && candidate.After(*r.Until) {
 			return time.Time{}, false
 		}
-		return candidate, true
+		return candidate.UTC(), true
 	}
 	return time.Time{}, false
 }

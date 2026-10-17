@@ -33,15 +33,22 @@ type Session struct {
 	ExpiresAt time.Time
 }
 
+// RegisterOptions are optional details from the sign-up form that other
+// modules use to set up the new account.
+type RegisterOptions struct {
+	Timezone string // browser-reported IANA zone; ignored if invalid
+}
+
 type AuthService struct {
 	Users    repository.UserRepository
 	Sessions repository.SessionRepository
 	// OnRegister runs after an account is created, so modules can seed
-	// per-user defaults (e.g. task lists) without auth depending on them.
-	OnRegister []func(ctx context.Context, user models.User) error
+	// per-user defaults (e.g. task lists, settings) without auth depending
+	// on them.
+	OnRegister []func(ctx context.Context, user models.User, opts RegisterOptions) error
 }
 
-func (s AuthService) Register(ctx context.Context, name, email, password string) (models.User, error) {
+func (s AuthService) Register(ctx context.Context, name, email, password string, opts RegisterOptions) (models.User, error) {
 	if len(password) > 72 {
 		return models.User{}, ErrPasswordTooLong
 	}
@@ -57,7 +64,7 @@ func (s AuthService) Register(ctx context.Context, name, email, password string)
 		return models.User{}, err
 	}
 	for _, hook := range s.OnRegister {
-		if err := hook(ctx, user); err != nil {
+		if err := hook(ctx, user, opts); err != nil {
 			return user, err
 		}
 	}

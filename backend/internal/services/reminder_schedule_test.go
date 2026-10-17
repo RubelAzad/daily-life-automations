@@ -2,6 +2,7 @@ package services
 
 import (
 	"testing"
+	"time"
 
 	"lifeos-ai/backend/internal/models"
 )
@@ -34,24 +35,24 @@ func TestNextEventReminder(t *testing.T) {
 	e.Recurrence = &models.Recurrence{Frequency: "weekly", Interval: 1}
 
 	// Well before the first occurrence.
-	r, o := NextEventReminder(e, 15, at("2026-10-18T00:00:00Z"))
+	r, o := NextEventReminder(e, 15, at("2026-10-18T00:00:00Z"), time.UTC)
 	if r == nil || !r.Equal(at("2026-10-19T02:45:00Z")) || !o.Equal(at("2026-10-19T03:00:00Z")) {
 		t.Fatalf("first: got %v / %v", r, o)
 	}
 	// Worker firing slightly late at 02:45:20 → next week's occurrence.
-	r, o = NextEventReminder(e, 15, at("2026-10-19T02:45:20Z"))
+	r, o = NextEventReminder(e, 15, at("2026-10-19T02:45:20Z"), time.UTC)
 	if r == nil || !o.Equal(at("2026-10-26T03:00:00Z")) {
 		t.Fatalf("after firing: got %v / %v", r, o)
 	}
 	// One-off event that already started: no reminder.
 	one := timedEvent(2, "2026-10-19T03:00:00Z", 30)
-	if r, _ := NextEventReminder(one, 15, at("2026-10-19T02:50:00Z")); r != nil {
+	if r, _ := NextEventReminder(one, 15, at("2026-10-19T02:50:00Z"), time.UTC); r != nil {
 		t.Errorf("past offset point of one-off event should be nil, got %v", r)
 	}
 	// Until reached.
 	until := at("2026-10-20T00:00:00Z")
 	e.Recurrence.Until = &until
-	if r, _ := NextEventReminder(e, 15, at("2026-10-19T02:46:00Z")); r != nil {
+	if r, _ := NextEventReminder(e, 15, at("2026-10-19T02:46:00Z"), time.UTC); r != nil {
 		t.Errorf("ended series should be nil, got %v", r)
 	}
 }

@@ -159,6 +159,10 @@ func (s CalendarService) Update(ctx context.Context, userID, id uint64, in Updat
 	if err != nil {
 		return e, nil, err
 	}
+	loc, err := userLocation(ctx, s.Events.DB, userID)
+	if err != nil {
+		return e, nil, err
+	}
 
 	// Start from the stored schedule in the shape matching its current kind.
 	t := eventTimes{allDay: e.AllDay}
@@ -186,7 +190,7 @@ func (s CalendarService) Update(ctx context.Context, userID, id uint64, in Updat
 			// Switching kind: derive the other representation from the old one
 			// unless the client sends it.
 			if in.AllDay.Value {
-				start := models.Date{Time: e.StartsAt.UTC().Truncate(24 * time.Hour)}
+				start := localToday(e.StartsAt, loc) // the event's date in the user's time zone
 				t.startDate, t.endDate = &start, nil
 			} else {
 				t.startsAt, t.endsAt = nil, nil
@@ -240,7 +244,7 @@ func (s CalendarService) Update(ctx context.Context, userID, id uint64, in Updat
 		return saved, nil, err
 	}
 	// Reminders follow the event when its time or recurrence moves.
-	if err := rescheduleEventReminders(ctx, s.Reminders, saved, time.Now().UTC()); err != nil {
+	if err := rescheduleEventReminders(ctx, s.Reminders, saved, time.Now().UTC(), loc); err != nil {
 		return saved, nil, err
 	}
 	conflicts, err := s.conflictsFor(ctx, saved)
@@ -316,9 +320,13 @@ func (s CalendarService) occurrences(ctx context.Context, userID uint64, from, t
 	if err != nil {
 		return nil, err
 	}
+	loc, err := userLocation(ctx, s.Events.DB, userID)
+	if err != nil {
+		return nil, err
+	}
 	occs := []models.EventOccurrence{}
 	for _, e := range events {
-		occs = append(occs, expandEvent(e, paddedFrom, paddedTo)...)
+		occs = append(occs, expandEvent(e, paddedFrom, paddedTo, loc)...)
 	}
 	markConflicts(occs)
 	sortOccurrences(occs)

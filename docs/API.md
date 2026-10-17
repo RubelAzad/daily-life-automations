@@ -21,10 +21,31 @@ Base URL: `http://localhost:8080/api/v1`. Request and response bodies are JSON.
 
 | Method | Path | Body | Result |
 |---|---|---|---|
-| POST | `/auth/register` | `name`, `email`, `password` (8–72 chars) | `201 {"user"}` + session cookie. Creates the default lists. `409` if the email is taken |
+| POST | `/auth/register` | `name`, `email`, `password` (8–72 chars), optional `timezone` (the browser's IANA zone) | `201 {"user"}` + session cookie. Creates the default lists and settings; an unknown `timezone` falls back to `UTC`. `409` if the email is taken |
 | POST | `/auth/login` | `email`, `password` | `200 {"user"}` + session cookie, or `401` |
 | POST | `/auth/logout` | — | `204`, ends the session |
 | GET | `/auth/me` | — | `200 {"user"}` |
+
+## Settings
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/settings` | `200 {"data": settings}` |
+| PATCH | `/settings` | Any of the fields below. `200 {"data": settings}` |
+
+| Field | Values | Default | Used for |
+|---|---|---|---|
+| `timezone` | IANA name, e.g. `Asia/Dhaka` (not `Local`) | browser's zone at sign-up, else `UTC` | Repeating tasks and events keep the same local time (also across daylight saving); "today" for *expiring soon*; note expiry reminders fire at 09:00 local; quiet hours. |
+| `week_starts_on` | `0` Sunday, `1` Monday, `6` Saturday | `1` | The calendar week |
+| `quiet_hours_enabled` | `true`/`false` | `false` | |
+| `quiet_hours_start`, `quiet_hours_end` | `HH:MM`, local time; must differ | `22:00`, `07:00` | Start later than end means the window crosses midnight. |
+| `ai_approval_mode` | `always` (ask before every change) or `high_impact_only` (routine changes to tasks, notes, events and reminders without asking) | `always` | The AI assistant (Phase 2). Sending messages, spending money, deleting data and bookings **always** need approval; there is no mode that skips it. |
+
+**Changing the time zone** recomputes pending event and note reminders. Reminders that were already sent are not re-sent.
+
+**Quiet hours:** a reminder that comes due in the window is held until the window ends (`remind_at` moves to that time). It is delivered at once if the task or event it is about happens before the window ends (e.g. a 06:00 flight when quiet hours end at 07:00). Follow-ups and standalone reminders are always held.
+
+**Clients** show times in the device's time zone. The web app warns on the settings page when it differs from `timezone`.
 
 ## Tasks
 
@@ -51,7 +72,7 @@ Base URL: `http://localhost:8080/api/v1`. Request and response bodies are JSON.
 - **Next due date:** the first date in the series after both the previous due date and *now*. A daily task completed three days late is next due tomorrow; it doesn't create three catch-up copies.
 - **Month ends:** dates are calculated from the series' first due date and clamped to month length, so "monthly on the 31st" gives Jan 31 → Feb 28 → Mar 31.
 - **Series end:** no new occurrence is created past `until`.
-- **Known limitation:** dates are calculated in UTC until Step 1.8 adds user time zones. For Asia/Dhaka (UTC+6), a monthly task due between 00:00 and 05:59 local time can be clamped by its UTC date near month ends.
+- **Time zone:** dates are counted in the user's `timezone` setting, so "daily at 09:00" stays at 09:00 local time, including across daylight-saving changes.
 
 ### Dependencies
 - A task with any open dependency has `blocked: true`. It **cannot be set to `completed`** (`422`), but it can still be started (`in_progress`) or cancelled.
@@ -127,7 +148,7 @@ A project groups tasks toward a goal. It's separate from lists: a task can be in
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/reminders` | Query: `status` (`scheduled` by default; also `sent`, `cancelled`, comma-separated values, or `all`), `task_id`, `event_id`, `page`, `per_page`. Ordered by next fire time; inactive reminders come last. |
+| GET | `/reminders` | Query: `status` (`scheduled` by default; also `sent`, `cancelled`, comma-separated values, or `all`), `task_id`, `event_id`, `note_id`, `page`, `per_page`. Ordered by next fire time; inactive reminders come last. |
 | POST | `/reminders` | See the kinds below. |
 | PATCH | `/reminders/:id` | `title` (standalone only), `note`, `remind_at`, `offset_minutes`, `follow_up_minutes`, `max_follow_ups`. Any change re-arms the reminder. You can't move a reminder to a different task or event. |
 | DELETE | `/reminders/:id` | `204` |
@@ -140,7 +161,7 @@ A project groups tasks toward a goal. It's separate from lists: a task can be in
 | `standalone` | `title`, `remind_at` (future), optional `note` | Fires once |
 | `task` | `task_id`, plus `offset_minutes` (minutes before `due_at`, 0–43 200) **or** a fixed `remind_at` | Not delivered if the task is completed or cancelled by then (its status becomes `cancelled`). Offset reminders move when the due date changes, are inactive (`remind_at: null`) while there's no upcoming due date, and are copied to the next occurrence of a recurring task. |
 | `event` | `event_id`, `offset_minutes` (required) | Fires before **each** occurrence of a repeating event, then re-arms for the next one. Moves when the event changes. |
-| `note` | `note_id`, `offset_minutes` (required; e.g. 43 200 = 30 days) | Expiry reminder before the note's `expires_on`. The expiry is treated as 09:00 UTC on that date until Step 1.8 adds time zones. Moves when `expires_on` changes. Not delivered if the note is archived or its expiry date is removed. |
+| `note` | `note_id`, `offset_minutes` (required; e.g. 43 200 = 30 days) | Expiry reminder before the note's `expires_on`. The expiry is 09:00 on that date in the user's time zone. Moves when `expires_on` changes. Not delivered if the note is archived or its expiry date is removed. |
 
 **Follow-ups** (tasks only): `follow_up_minutes` (5–10 080) and `max_follow_ups` (1–10, default 3). After the first reminder, LifeOS keeps reminding every `follow_up_minutes` while the task is still open, up to the maximum. `follow_ups_sent` counts them.
 
@@ -159,7 +180,7 @@ The worker (`go run ./cmd/worker`) creates notifications. They are in-app only f
 
 **Delivery guarantees:** each reminder is claimed with `SELECT … FOR UPDATE SKIP LOCKED` in its own transaction. Each notification carries the unique key `reminder:<id>:<fire time>` and is inserted with `INSERT IGNORE`. Running several workers, or rerunning one after a crash, never duplicates a notification.
 
-**Not yet:** quiet hours, escalation to other channels, and location-based reminders. Quiet hours come with user settings in Step 1.8; the other channels with integrations in Phase 6.
+**Not yet:** escalation to other channels, and location-based reminders. Other channels come with integrations in Phase 6. Quiet hours: see [Settings](#settings).
 
 ## Notes
 

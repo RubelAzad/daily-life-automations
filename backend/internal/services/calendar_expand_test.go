@@ -23,10 +23,10 @@ func starts(occs []models.EventOccurrence) []string {
 
 func TestExpandOneOff(t *testing.T) {
 	e := timedEvent(1, "2026-10-20T09:00:00Z", 60)
-	if got := expandEvent(e, at("2026-10-20T09:30:00Z"), at("2026-10-21T00:00:00Z")); len(got) != 1 {
+	if got := expandEvent(e, at("2026-10-20T09:30:00Z"), at("2026-10-21T00:00:00Z"), time.UTC); len(got) != 1 {
 		t.Errorf("event running at window start should be included, got %d", len(got))
 	}
-	if got := expandEvent(e, at("2026-10-20T10:00:00Z"), at("2026-10-21T00:00:00Z")); len(got) != 0 {
+	if got := expandEvent(e, at("2026-10-20T10:00:00Z"), at("2026-10-21T00:00:00Z"), time.UTC); len(got) != 0 {
 		t.Errorf("event ending exactly at window start must be excluded, got %d", len(got))
 	}
 }
@@ -35,7 +35,7 @@ func TestExpandWeeklySkipsAheadAndRespectsUntil(t *testing.T) {
 	e := timedEvent(1, "2020-01-06T09:00:00Z", 60) // a Monday, years ago
 	until := at("2026-10-26T09:00:00Z")
 	e.Recurrence = &models.Recurrence{Frequency: "weekly", Interval: 1, Until: &until}
-	got := starts(expandEvent(e, at("2026-10-12T00:00:00Z"), at("2026-11-09T00:00:00Z")))
+	got := starts(expandEvent(e, at("2026-10-12T00:00:00Z"), at("2026-11-09T00:00:00Z"), time.UTC))
 	want := []string{"2026-10-12T09:00:00Z", "2026-10-19T09:00:00Z", "2026-10-26T09:00:00Z"}
 	if !slices.Equal(got, want) {
 		t.Errorf("got %v, want %v", got, want)
@@ -45,7 +45,7 @@ func TestExpandWeeklySkipsAheadAndRespectsUntil(t *testing.T) {
 func TestExpandDailyIncludesOccurrenceStillRunning(t *testing.T) {
 	e := timedEvent(1, "2026-10-01T23:00:00Z", 120) // 23:00–01:00 every day
 	e.Recurrence = &models.Recurrence{Frequency: "daily", Interval: 1}
-	got := starts(expandEvent(e, at("2026-10-10T00:00:00Z"), at("2026-10-10T12:00:00Z")))
+	got := starts(expandEvent(e, at("2026-10-10T00:00:00Z"), at("2026-10-10T12:00:00Z"), time.UTC))
 	want := []string{"2026-10-09T23:00:00Z"}
 	if !slices.Equal(got, want) {
 		t.Errorf("got %v, want %v", got, want)
@@ -55,7 +55,7 @@ func TestExpandDailyIncludesOccurrenceStillRunning(t *testing.T) {
 func TestExpandMonthlyOn31st(t *testing.T) {
 	e := timedEvent(1, "2026-01-31T10:00:00Z", 30)
 	e.Recurrence = &models.Recurrence{Frequency: "monthly", Interval: 1}
-	got := starts(expandEvent(e, at("2026-02-01T00:00:00Z"), at("2026-05-01T00:00:00Z")))
+	got := starts(expandEvent(e, at("2026-02-01T00:00:00Z"), at("2026-05-01T00:00:00Z"), time.UTC))
 	want := []string{"2026-02-28T10:00:00Z", "2026-03-31T10:00:00Z", "2026-04-30T10:00:00Z"}
 	if !slices.Equal(got, want) {
 		t.Errorf("got %v, want %v", got, want)
@@ -91,7 +91,7 @@ func TestMarkConflicts(t *testing.T) {
 func TestMarkConflictsIgnoresSameSeries(t *testing.T) {
 	e := timedEvent(1, "2026-10-20T09:00:00Z", 26*60) // longer than its daily period
 	e.Recurrence = &models.Recurrence{Frequency: "daily", Interval: 1}
-	occs := expandEvent(e, at("2026-10-20T00:00:00Z"), at("2026-10-23T00:00:00Z"))
+	occs := expandEvent(e, at("2026-10-20T00:00:00Z"), at("2026-10-23T00:00:00Z"), time.UTC)
 	markConflicts(occs)
 	for _, o := range occs {
 		if len(o.ConflictsWith) != 0 {

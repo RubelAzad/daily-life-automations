@@ -346,7 +346,11 @@ func createNextOccurrence(ctx context.Context, tx repository.TaskRepository, rem
 	if t.DueAt == nil || t.RecurrenceAnchorAt == nil {
 		return nil, nil
 	}
-	due, ok := nextOccurrence(*t.Recurrence, *t.RecurrenceAnchorAt, *t.DueAt, now)
+	loc, err := userLocation(ctx, tx.DB, t.UserID)
+	if err != nil {
+		return nil, err
+	}
+	due, ok := nextOccurrence(*t.Recurrence, *t.RecurrenceAnchorAt, *t.DueAt, now, loc)
 	if !ok {
 		return nil, nil
 	}
