@@ -43,7 +43,14 @@ export default function AppHeader({ user }: { user: User }) {
       </div>
       <div className="flex items-center gap-3 text-sm">
         <NotificationBell />
-        <span className="text-zinc-600 dark:text-zinc-400">{user.name}</span>
+        <Link
+          href="/settings"
+          aria-current={pathname.startsWith("/settings") ? "page" : undefined}
+          title="Settings"
+          className="text-zinc-600 hover:text-zinc-900 aria-[current=page]:font-medium aria-[current=page]:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 dark:aria-[current=page]:text-zinc-100"
+        >
+          {user.name} · Settings
+        </Link>
         <button type="button" onClick={onLogout} className="underline">
           Sign out
         </button>

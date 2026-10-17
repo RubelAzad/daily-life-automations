@@ -15,7 +15,7 @@ import {
   type NoteKind,
   type Project,
 } from "@/lib/api";
-import { formatBytes } from "@/lib/format";
+import { formatBytes, localDateKey } from "@/lib/format";
 
 type Props = {
   noteId: number | null; // null = new note
@@ -145,7 +145,7 @@ function NoteForm({ note, projects, onSaved, onDeleted, onChanged, onError, refr
             Pinned
           </label>
           {!showExpiry && (
-            <button type="button" onClick={() => setExpiresOn(new Date().toISOString().slice(0, 10))} className="text-zinc-500 underline">
+            <button type="button" onClick={() => setExpiresOn(localDateKey(new Date()))} className="text-zinc-500 underline">
               + Expiry date
             </button>
           )}

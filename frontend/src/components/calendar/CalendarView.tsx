@@ -2,18 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import AppHeader, { ErrorBanner } from "@/components/AppHeader";
-import { listEvents, listTasks, updateTask, type EventOccurrence, type Task } from "@/lib/api";
+import { getSettings, listEvents, listTasks, updateTask, type EventOccurrence, type Task } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { formatTime, localDateKey } from "@/lib/format";
 import { useRequireUser } from "@/lib/useRequireUser";
 import EventEditor, { type EditorTarget } from "./EventEditor";
 
-// 1 = Monday. TODO(step 1.8): read from user settings.
-const WEEK_STARTS_ON = 1;
-
-function startOfWeek(d: Date): Date {
+/** Midnight of the first day of d's week; weekStartsOn: 0 Sunday, 1 Monday, 6 Saturday. */
+function startOfWeek(d: Date, weekStartsOn: number): Date {
   const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const diff = (day.getDay() - WEEK_STARTS_ON + 7) % 7;
+  const diff = (day.getDay() - weekStartsOn + 7) % 7;
   day.setDate(day.getDate() - diff);
   return day;
 }
@@ -30,6 +28,8 @@ export default function CalendarView() {
   // after sign-in has loaded, never during prerendering (cacheComponents
   // forbids reading the clock there).
   const [weekOffset, setWeekOffset] = useState(0);
+  // From the user's settings; null until loaded.
+  const [weekStartsOn, setWeekStartsOn] = useState<number | null>(null);
   const [events, setEvents] = useState<EventOccurrence[] | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [editor, setEditor] = useState<EditorTarget | null>(null);
@@ -41,8 +41,18 @@ export default function CalendarView() {
 
   useEffect(() => {
     if (!user) return;
+    getSettings()
+      .then((s) => setWeekStartsOn(s.week_starts_on))
+      .catch((err) => {
+        setWeekStartsOn(1);
+        showError(err);
+      });
+  }, [user, showError]);
+
+  useEffect(() => {
+    if (!user || weekStartsOn === null) return;
     let cancelled = false;
-    const weekStart = addDays(startOfWeek(new Date()), weekOffset * 7);
+    const weekStart = addDays(startOfWeek(new Date(), weekStartsOn), weekOffset * 7);
     const from = weekStart.toISOString();
     const to = addDays(weekStart, 7).toISOString();
     Promise.all([listEvents(from, to), listTasks({ status: "open", due_from: from, due_to: to, per_page: 100 })])
@@ -55,14 +65,14 @@ export default function CalendarView() {
     return () => {
       cancelled = true;
     };
-  }, [user, weekOffset, version, showError]);
+  }, [user, weekStartsOn, weekOffset, version, showError]);
 
   const titles = useMemo(() => new Map((events ?? []).map((e) => [e.id, e.title])), [events]);
 
-  if (!user) return <p className="p-6 text-zinc-500">{authError ?? "Loading…"}</p>;
+  if (!user || weekStartsOn === null) return <p className="p-6 text-zinc-500">{authError ?? "Loading…"}</p>;
 
   const now = new Date();
-  const weekStart = addDays(startOfWeek(now), weekOffset * 7);
+  const weekStart = addDays(startOfWeek(now, weekStartsOn), weekOffset * 7);
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const todayKey = localDateKey(now);
   const rangeLabel = `${days[0].toLocaleDateString(undefined, { day: "numeric", month: "short" })} – ${days[6].toLocaleDateString(undefined, {

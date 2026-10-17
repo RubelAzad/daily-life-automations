@@ -9,8 +9,10 @@ import (
 
 // expandEvent returns the occurrences of e that overlap [from, to). One-off
 // events yield at most one occurrence. Recurring events are computed from the
-// series start, so monthly dates don't drift.
-func expandEvent(e models.CalendarEvent, from, to time.Time) []models.EventOccurrence {
+// series start, so monthly dates don't drift. Timed events repeat at the same
+// local time in loc (the user's time zone); all-day events are calendar dates
+// stored at UTC midnight and repeat in UTC.
+func expandEvent(e models.CalendarEvent, from, to time.Time, loc *time.Location) []models.EventOccurrence {
 	duration := e.EndsAt.Sub(e.StartsAt)
 	if e.Recurrence == nil {
 		if e.StartsAt.Before(to) && e.EndsAt.After(from) {
@@ -21,9 +23,13 @@ func expandEvent(e models.CalendarEvent, from, to time.Time) []models.EventOccur
 
 	var out []models.EventOccurrence
 	r := e.Recurrence
+	if e.AllDay {
+		loc = time.UTC
+	}
+	anchor := e.StartsAt.In(loc)
 	first := firstCandidateStep(e, from)
 	for k := first; k < first+maxOccurrenceSteps; k++ {
-		start := occurrence(e.StartsAt, r.Frequency, k*r.Interval)
+		start := occurrence(anchor, r.Frequency, k*r.Interval).UTC()
 		if !start.Before(to) || (r.Until != nil && start.After(*r.Until)) {
 			break
 		}

@@ -102,7 +102,12 @@ func (s NoteService) List(ctx context.Context, userID uint64, in ListNotesInput)
 		if err != nil || days < 0 || days > 3650 {
 			c.fail("expiring_within_days", "must be between 0 and 3650")
 		} else {
-			d := models.Date{Time: time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, days)}
+			loc, err := userLocation(ctx, s.Notes.DB, userID)
+			if err != nil {
+				return nil, PageMeta{}, err
+			}
+			d := localToday(time.Now(), loc)
+			d.Time = d.Time.AddDate(0, 0, days)
 			f.ExpiringBefore = &d
 			if in.Sort == "" {
 				f.Sort = "expires_on"
@@ -225,7 +230,11 @@ func (s NoteService) Update(ctx context.Context, userID, id uint64, in UpdateNot
 			}
 		}
 		if in.ExpiresOn.Set {
-			return rescheduleNoteReminders(ctx, repository.ReminderRepository{DB: db}, n, time.Now().UTC())
+			loc, err := userLocation(ctx, db, userID)
+			if err != nil {
+				return err
+			}
+			return rescheduleNoteReminders(ctx, repository.ReminderRepository{DB: db}, n, time.Now().UTC(), loc)
 		}
 		return nil
 	})

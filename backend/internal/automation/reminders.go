@@ -23,6 +23,10 @@ const defaultBatchSize = 200
 // reminder is locked with FOR UPDATE SKIP LOCKED inside its own transaction,
 // and each notification carries an idempotency key ("reminder:<id>:<unix
 // fire time>") so it is inserted at most once.
+//
+// Reminders that come due during the user's quiet hours are held until the
+// quiet hours end, unless the task or event they are about happens before
+// then (holding those would make them useless).
 type ReminderWorker struct {
 	DB        *sql.DB
 	Log       *log.Logger
@@ -33,6 +37,7 @@ type ReminderWorker struct {
 type RunStats struct {
 	Delivered int // notifications created
 	Skipped   int // reminders cancelled because their task is already done
+	Held      int // moved to the end of the user's quiet hours
 	Errors    int
 }
 
@@ -57,7 +62,7 @@ func (w ReminderWorker) logPass(stats RunStats, err error) {
 		return
 	}
 	if stats != (RunStats{}) {
-		w.Log.Printf("reminders: delivered=%d skipped=%d errors=%d", stats.Delivered, stats.Skipped, stats.Errors)
+		w.Log.Printf("reminders: delivered=%d skipped=%d held=%d errors=%d", stats.Delivered, stats.Skipped, stats.Held, stats.Errors)
 	}
 }
 
@@ -112,7 +117,17 @@ func (w ReminderWorker) process(ctx context.Context, id uint64, now time.Time, s
 			return err
 		}
 
-		n, err := w.buildNotification(ctx, tx, &r, now)
+		settings, err := repository.SettingsRepository{DB: tx}.Get(ctx, r.UserID)
+		if err != nil {
+			return err
+		}
+		if end, quiet := services.QuietHoursEnd(settings, now); quiet && !happensBefore(r, end) {
+			r.RemindAt = &end
+			stats.Held++
+			return reminders.Update(ctx, r)
+		}
+
+		n, err := w.buildNotification(ctx, tx, &r, now, settings.Location())
 		if err != nil {
 			return err
 		}
@@ -135,7 +150,7 @@ func (w ReminderWorker) process(ctx context.Context, id uint64, now time.Time, s
 // buildNotification decides what to send for r and advances r to its next
 // state (next follow-up, next event occurrence, or done). It returns nil when
 // nothing should be sent.
-func (w ReminderWorker) buildNotification(ctx context.Context, tx repository.DBTX, r *models.Reminder, now time.Time) (*models.Notification, error) {
+func (w ReminderWorker) buildNotification(ctx context.Context, tx repository.DBTX, r *models.Reminder, now time.Time, loc *time.Location) (*models.Notification, error) {
 	n := &models.Notification{
 		UserID:         r.UserID,
 		Kind:           "reminder",
@@ -190,7 +205,7 @@ func (w ReminderWorker) buildNotification(ctx context.Context, tx repository.DBT
 		}
 		n.Body = withNote(body, r.Note)
 		// Repeating events: arm the reminder for the next occurrence.
-		r.RemindAt, r.OccursAt = services.NextEventReminder(event, *r.OffsetMinutes, now)
+		r.RemindAt, r.OccursAt = services.NextEventReminder(event, *r.OffsetMinutes, now, loc)
 		if r.RemindAt == nil {
 			r.Status = models.ReminderSent
 		}
@@ -216,6 +231,13 @@ func (w ReminderWorker) buildNotification(ctx context.Context, tx repository.DBT
 		r.Status = models.ReminderSent
 	}
 	return n, nil
+}
+
+// happensBefore reports whether the reminder is about something that starts
+// at or after its fire time but before t, e.g. an event at 06:00 when quiet
+// hours end at 07:00. Follow-ups and standalone reminders never qualify.
+func happensBefore(r models.Reminder, t time.Time) bool {
+	return r.OccursAt != nil && r.RemindAt != nil && !r.OccursAt.Before(*r.RemindAt) && r.OccursAt.Before(t)
 }
 
 func withNote(body string, note *string) *string {

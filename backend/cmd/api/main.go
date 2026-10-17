@@ -58,10 +58,17 @@ func main() {
 		Notifications: services.NotificationService{Notifications: repository.NotificationRepository{DB: db}},
 	}
 
+	settingsService := services.SettingsService{Settings: repository.SettingsRepository{DB: db}}
+	settingsHandler := handlers.SettingsHandler{Settings: settingsService}
 	authService := services.AuthService{
-		Users:      repository.UserRepository{DB: db},
-		Sessions:   repository.SessionRepository{DB: db},
-		OnRegister: []func(context.Context, models.User) error{taskListService.CreateDefaults},
+		Users:    repository.UserRepository{DB: db},
+		Sessions: repository.SessionRepository{DB: db},
+		OnRegister: []func(context.Context, models.User, services.RegisterOptions) error{
+			func(ctx context.Context, u models.User, _ services.RegisterOptions) error {
+				return taskListService.CreateDefaults(ctx, u)
+			},
+			settingsService.CreateDefaults,
+		},
 	}
 	authHandler := handlers.AuthHandler{Auth: authService, SecureCookies: cfg.AppEnv != "local"}
 	taskHandler := handlers.TaskHandler{Tasks: taskService}
@@ -75,6 +82,8 @@ func main() {
 
 	protected := api.Group("", middleware.RequireAuth(authService))
 	protected.GET("/auth/me", authHandler.Me)
+	protected.GET("/settings", settingsHandler.Get)
+	protected.PATCH("/settings", settingsHandler.Update)
 
 	protected.GET("/tasks", taskHandler.List)
 	protected.POST("/tasks", taskHandler.Create)

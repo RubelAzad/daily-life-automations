@@ -20,6 +20,7 @@ type registerRequest struct {
 	Name     string `json:"name" binding:"required,max=120"`
 	Email    string `json:"email" binding:"required,email,max=255"`
 	Password string `json:"password" binding:"required,min=8,max=72"`
+	Timezone string `json:"timezone" binding:"max=64"` // optional, from the browser
 }
 
 type loginRequest struct {
@@ -33,7 +34,7 @@ func (h AuthHandler) Register(c *gin.Context) {
 	if !bindJSON(c, &req) {
 		return
 	}
-	_, err := h.Auth.Register(c.Request.Context(), req.Name, req.Email, req.Password)
+	_, err := h.Auth.Register(c.Request.Context(), req.Name, req.Email, req.Password, services.RegisterOptions{Timezone: req.Timezone})
 	switch {
 	case errors.Is(err, services.ErrEmailTaken):
 		respondError(c, http.StatusConflict, err.Error())

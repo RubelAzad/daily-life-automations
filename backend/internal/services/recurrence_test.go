@@ -65,7 +65,7 @@ func TestNextOccurrence(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, ok := nextOccurrence(c.rec, at(c.anchor), at(c.due), at(c.now))
+			got, ok := nextOccurrence(c.rec, at(c.anchor), at(c.due), at(c.now), time.UTC)
 			if c.want == "" {
 				if ok {
 					t.Fatalf("expected series to end, got %s", got.Format(time.RFC3339))

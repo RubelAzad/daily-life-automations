@@ -44,7 +44,8 @@ export function getHealth() {
   return request<Health>("/health");
 }
 
-export async function register(input: { name: string; email: string; password: string }) {
+/** timezone is the browser's IANA zone; the server ignores it if unknown. */
+export async function register(input: { name: string; email: string; password: string; timezone?: string }) {
   return (await request<{ user: User }>("/auth/register", { method: "POST", body: JSON.stringify(input) })).user;
 }
 
@@ -54,6 +55,39 @@ export async function login(input: { email: string; password: string }) {
 
 export function logout() {
   return request<void>("/auth/logout", { method: "POST" });
+}
+
+// ---- Settings --------------------------------------------------------------
+
+export const WEEK_START_OPTIONS = [
+  { value: 6, label: "Saturday" },
+  { value: 0, label: "Sunday" },
+  { value: 1, label: "Monday" },
+] as const;
+export type WeekStart = (typeof WEEK_START_OPTIONS)[number]["value"];
+export type ApprovalMode = "always" | "high_impact_only";
+
+export type Settings = {
+  timezone: string;
+  week_starts_on: WeekStart;
+  quiet_hours_enabled: boolean;
+  quiet_hours_start: string; // "HH:MM"
+  quiet_hours_end: string;
+  ai_approval_mode: ApprovalMode;
+  updated_at: string;
+};
+
+export async function getSettings() {
+  return (await request<{ data: Settings }>("/settings")).data;
+}
+
+export async function updateSettings(patch: Partial<Omit<Settings, "updated_at">>) {
+  return (await request<{ data: Settings }>("/settings", { method: "PATCH", body: JSON.stringify(patch) })).data;
+}
+
+/** The time zone this browser/device is set to, e.g. "Asia/Dhaka". */
+export function deviceTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
 // ---- Tasks -----------------------------------------------------------------

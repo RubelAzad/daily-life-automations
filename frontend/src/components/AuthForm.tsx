@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { ApiError, login, register } from "@/lib/api";
+import { ApiError, deviceTimeZone, login, register } from "@/lib/api";
 
 type Mode = "login" | "register";
 
@@ -24,7 +24,7 @@ export default function AuthForm({ mode }: { mode: Mode }) {
     setFields({});
     try {
       if (mode === "register") {
-        await register({ name: String(form.get("name") ?? ""), email, password });
+        await register({ name: String(form.get("name") ?? ""), email, password, timezone: deviceTimeZone() });
       } else {
         await login({ email, password });
       }
