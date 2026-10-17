@@ -18,6 +18,7 @@ func (h TaskHandler) List(c *gin.Context) {
 		Status:   c.Query("status"),
 		Priority: c.Query("priority"),
 		ListID:   c.Query("list_id"),
+		ParentID: c.Query("parent_id"),
 		Query:    c.Query("q"),
 		DueFrom:  c.Query("due_from"),
 		DueTo:    c.Query("due_to"),
@@ -85,4 +86,42 @@ func (h TaskHandler) Delete(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+type addDependencyRequest struct {
+	DependsOnID uint64 `json:"depends_on_id" binding:"required"`
+}
+
+func (h TaskHandler) AddDependency(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	var req addDependencyRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	task, err := h.Tasks.AddDependency(c.Request.Context(), middleware.CurrentUser(c).ID, id, req.DependsOnID)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": task})
+}
+
+func (h TaskHandler) RemoveDependency(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	dependsOnID, ok := pathParamID(c, "depends_on_id")
+	if !ok {
+		return
+	}
+	task, err := h.Tasks.RemoveDependency(c.Request.Context(), middleware.CurrentUser(c).ID, id, dependsOnID)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": task})
 }

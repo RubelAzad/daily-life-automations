@@ -61,17 +61,36 @@ export const TASK_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 
+export const RECURRENCE_FREQUENCIES = ["daily", "weekly", "monthly", "yearly"] as const;
+export type RecurrenceFrequency = (typeof RECURRENCE_FREQUENCIES)[number];
+
+export type Recurrence = {
+  frequency: RecurrenceFrequency;
+  interval: number;
+  until: string | null;
+};
+
+export type TaskRef = { id: number; title: string; status: TaskStatus };
+
 export type Task = {
   id: number;
   list_id: number | null;
+  parent_id: number | null;
   title: string;
   description: string | null;
   status: TaskStatus;
   priority: TaskPriority;
   due_at: string | null;
   completed_at: string | null;
+  recurrence: Recurrence | null;
+  next_task_id: number | null;
   created_at: string;
   updated_at: string;
+  subtask_count: number;
+  subtasks_completed: number;
+  dependencies: TaskRef[];
+  /** True while any dependency is still open; the task cannot be completed. */
+  blocked: boolean;
 };
 
 export type TaskList = {
@@ -88,6 +107,7 @@ export type TaskQuery = {
   status?: string; // "open", or comma-separated statuses
   priority?: TaskPriority;
   list_id?: number;
+  parent_id?: number; // list this task's subtasks
   q?: string;
   sort?: "due_at" | "-due_at" | "created_at" | "-created_at" | "priority";
   page?: number;
@@ -101,7 +121,11 @@ export type TaskInput = {
   priority: TaskPriority;
   due_at: string | null; // RFC 3339
   list_id: number | null;
+  /** Requires due_at. Send the whole object to change it; null stops repeating. */
+  recurrence: Recurrence | null;
 };
+
+export type NewTaskInput = Partial<TaskInput> & { title: string; parent_id?: number };
 
 export function listTasks(query: TaskQuery = {}) {
   const params = new URLSearchParams();
@@ -111,7 +135,7 @@ export function listTasks(query: TaskQuery = {}) {
   return request<{ data: Task[]; meta: PageMeta }>(`/tasks?${params}`);
 }
 
-export async function createTask(input: Partial<TaskInput> & { title: string }) {
+export async function createTask(input: NewTaskInput) {
   return (await request<{ data: Task }>("/tasks", { method: "POST", body: JSON.stringify(input) })).data;
 }
 
@@ -122,6 +146,20 @@ export async function updateTask(id: number, patch: Partial<TaskInput>) {
 
 export function deleteTask(id: number) {
   return request<void>(`/tasks/${id}`, { method: "DELETE" });
+}
+
+/** Makes taskId wait for dependsOnId. Rejected (422) if it would create a cycle. */
+export async function addDependency(taskId: number, dependsOnId: number) {
+  return (
+    await request<{ data: Task }>(`/tasks/${taskId}/dependencies`, {
+      method: "POST",
+      body: JSON.stringify({ depends_on_id: dependsOnId }),
+    })
+  ).data;
+}
+
+export async function removeDependency(taskId: number, dependsOnId: number) {
+  return (await request<{ data: Task }>(`/tasks/${taskId}/dependencies/${dependsOnId}`, { method: "DELETE" })).data;
 }
 
 export async function listTaskLists() {

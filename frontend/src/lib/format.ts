@@ -26,6 +26,31 @@ export function fromLocalInput(value: string): string | null {
   return value ? new Date(value).toISOString() : null;
 }
 
+const UNITS: Record<string, [string, string]> = {
+  daily: ["Daily", "days"],
+  weekly: ["Weekly", "weeks"],
+  monthly: ["Monthly", "months"],
+  yearly: ["Yearly", "years"],
+};
+
+/** "Weekly", "Every 2 months", "Daily until 5 May". */
+export function formatRecurrence(r: { frequency: string; interval: number; until: string | null }): string {
+  const [single, plural] = UNITS[r.frequency] ?? [r.frequency, r.frequency];
+  const base = r.interval > 1 ? `Every ${r.interval} ${plural}` : single;
+  if (!r.until) return base;
+  return `${base} until ${new Date(r.until).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
+}
+
+/** "YYYY-MM-DD" for a date input, in the viewer's time zone. */
+export function toDateInput(iso: string | null): string {
+  return toLocalInput(iso).slice(0, 10);
+}
+
+/** End of the chosen local day as RFC 3339, or null if empty. */
+export function fromDateInputEndOfDay(value: string): string | null {
+  return value ? new Date(`${value}T23:59:59`).toISOString() : null;
+}
+
 function startOfDay(d: Date): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }

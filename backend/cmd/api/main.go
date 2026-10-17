@@ -66,6 +66,8 @@ func main() {
 	protected.GET("/tasks/:id", taskHandler.Get)
 	protected.PATCH("/tasks/:id", taskHandler.Update)
 	protected.DELETE("/tasks/:id", taskHandler.Delete)
+	protected.POST("/tasks/:id/dependencies", taskHandler.AddDependency)
+	protected.DELETE("/tasks/:id/dependencies/:depends_on_id", taskHandler.RemoveDependency)
 
 	protected.GET("/task-lists", taskListHandler.List)
 	protected.POST("/task-lists", taskListHandler.Create)

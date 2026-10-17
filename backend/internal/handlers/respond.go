@@ -57,7 +57,11 @@ func bindJSON(c *gin.Context, dst any) bool {
 
 // pathID parses the :id route parameter, writing a 404 if it is not a valid ID.
 func pathID(c *gin.Context) (uint64, bool) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	return pathParamID(c, "id")
+}
+
+func pathParamID(c *gin.Context, name string) (uint64, bool) {
+	id, err := strconv.ParseUint(c.Param(name), 10, 64)
 	if err != nil || id == 0 {
 		respondError(c, http.StatusNotFound, "not found")
 		return 0, false

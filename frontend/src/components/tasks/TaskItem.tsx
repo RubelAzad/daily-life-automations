@@ -1,17 +1,32 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
+  addDependency,
   deleteTask,
+  listTasks,
+  RECURRENCE_FREQUENCIES,
+  removeDependency,
   TASK_PRIORITIES,
   TASK_STATUSES,
   updateTask,
+  type RecurrenceFrequency,
   type Task,
   type TaskList,
   type TaskPriority,
+  type TaskRef,
   type TaskStatus,
 } from "@/lib/api";
-import { formatDue, fromLocalInput, isOverdue, toLocalInput } from "@/lib/format";
+import {
+  formatDue,
+  formatRecurrence,
+  fromDateInputEndOfDay,
+  fromLocalInput,
+  isOverdue,
+  toDateInput,
+  toLocalInput,
+} from "@/lib/format";
+import Subtasks from "./Subtasks";
 
 type Props = {
   task: Task;
@@ -29,14 +44,18 @@ const PRIORITY_STYLE: Record<TaskPriority, string> = {
 };
 
 const label = (s: string) => (s[0].toUpperCase() + s.slice(1)).replace("_", " ");
+const isClosed = (s: TaskStatus) => s === "completed" || s === "cancelled";
 
 export default function TaskItem({ task, lists, showList, onChanged, onError }: Props) {
   const [editing, setEditing] = useState(false);
+  const [showSubtasks, setShowSubtasks] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const done = task.status === "completed";
-  const closed = done || task.status === "cancelled";
+  const closed = isClosed(task.status);
   const list = lists.find((l) => l.id === task.list_id);
+  const waitingOn = task.dependencies.filter((d) => !isClosed(d.status));
+  const cannotComplete = task.blocked && !done;
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
@@ -57,6 +76,8 @@ export default function TaskItem({ task, lists, showList, onChanged, onError }: 
           task={task}
           lists={lists}
           onCancel={() => setEditing(false)}
+          onDependenciesChanged={onChanged}
+          onError={onError}
           onSave={(patch) =>
             run(async () => {
               await updateTask(task.id, patch);
@@ -73,13 +94,14 @@ export default function TaskItem({ task, lists, showList, onChanged, onError }: 
       <input
         type="checkbox"
         checked={done}
-        disabled={busy}
+        disabled={busy || cannotComplete}
         onChange={() => run(() => updateTask(task.id, { status: done ? "pending" : "completed" }))}
+        title={cannotComplete ? `Finish first: ${waitingOn.map((d) => d.title).join(", ")}` : undefined}
         aria-label={done ? `Mark "${task.title}" as not done` : `Mark "${task.title}" as done`}
-        className="mt-1 size-4 shrink-0 accent-zinc-900 dark:accent-zinc-100"
+        className="mt-1 size-4 shrink-0 accent-zinc-900 disabled:cursor-not-allowed dark:accent-zinc-100"
       />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className={`break-words ${closed ? "text-zinc-500 line-through" : ""}`}>{task.title}</span>
+        <span className={`wrap-break-word ${closed ? "text-zinc-500 line-through" : ""}`}>{task.title}</span>
         {task.description && <span className="line-clamp-2 text-sm text-zinc-500">{task.description}</span>}
         <div className="flex flex-wrap items-center gap-2 text-xs">
           {task.priority !== "medium" && <span className={`rounded px-1.5 py-0.5 ${PRIORITY_STYLE[task.priority]}`}>{label(task.priority)}</span>}
@@ -91,6 +113,17 @@ export default function TaskItem({ task, lists, showList, onChanged, onError }: 
               {formatDue(task.due_at)}
             </span>
           )}
+          {task.recurrence && <span className="text-zinc-500">↻ {formatRecurrence(task.recurrence)}</span>}
+          {task.subtask_count > 0 && (
+            <button type="button" onClick={() => setShowSubtasks(!showSubtasks)} aria-expanded={showSubtasks} className="text-zinc-500 underline">
+              ☑ {task.subtasks_completed}/{task.subtask_count}
+            </button>
+          )}
+          {cannotComplete && (
+            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+              Waiting on {waitingOn.map((d) => d.title).join(", ")}
+            </span>
+          )}
           {showList && list && (
             <span className="flex items-center gap-1 text-zinc-500">
               <span className="size-2 rounded-full" style={{ backgroundColor: list.color ?? "#a1a1aa" }} aria-hidden />
@@ -98,15 +131,21 @@ export default function TaskItem({ task, lists, showList, onChanged, onError }: 
             </span>
           )}
         </div>
+        {showSubtasks && <Subtasks parentId={task.id} onChanged={onChanged} onError={onError} />}
       </div>
       <div className="flex shrink-0 gap-2 text-sm">
+        {task.subtask_count === 0 && !showSubtasks && (
+          <button type="button" onClick={() => setShowSubtasks(true)} className="text-zinc-600 underline dark:text-zinc-400">
+            + Subtask
+          </button>
+        )}
         <button type="button" onClick={() => setEditing(true)} className="text-zinc-600 underline dark:text-zinc-400">
           Edit
         </button>
         <button
           type="button"
           disabled={busy}
-          onClick={() => window.confirm(`Delete "${task.title}"?`) && run(() => deleteTask(task.id))}
+          onClick={() => window.confirm(`Delete "${task.title}"${task.subtask_count ? " and its subtasks" : ""}?`) && run(() => deleteTask(task.id))}
           className="text-red-600 underline"
         >
           Delete
@@ -121,11 +160,15 @@ function TaskEditor({
   lists,
   onSave,
   onCancel,
+  onDependenciesChanged,
+  onError,
 }: {
   task: Task;
   lists: TaskList[];
   onSave: (patch: Parameters<typeof updateTask>[1]) => void;
   onCancel: () => void;
+  onDependenciesChanged: () => void;
+  onError: (err: unknown) => void;
 }) {
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? "");
@@ -133,6 +176,9 @@ function TaskEditor({
   const [priority, setPriority] = useState<TaskPriority>(task.priority);
   const [due, setDue] = useState(toLocalInput(task.due_at));
   const [listId, setListId] = useState<string>(task.list_id ? String(task.list_id) : "none");
+  const [frequency, setFrequency] = useState<RecurrenceFrequency | "none">(task.recurrence?.frequency ?? "none");
+  const [interval, setRepeatEvery] = useState(task.recurrence?.interval ?? 1);
+  const [until, setUntil] = useState(toDateInput(task.recurrence?.until ?? null));
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -143,6 +189,7 @@ function TaskEditor({
       priority,
       due_at: fromLocalInput(due),
       list_id: listId === "none" ? null : Number(listId),
+      recurrence: frequency === "none" ? null : { frequency, interval, until: fromDateInputEndOfDay(until) },
     });
   }
 
@@ -175,15 +222,56 @@ function TaskEditor({
           ))}
         </select>
         <input type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} aria-label="Due date" className={control} />
-        <select value={listId} onChange={(e) => setListId(e.target.value)} aria-label="List" className={control}>
-          <option value="none">No list</option>
-          {lists.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.name}
-            </option>
-          ))}
-        </select>
+        {task.parent_id === null && (
+          <select value={listId} onChange={(e) => setListId(e.target.value)} aria-label="List" className={control}>
+            <option value="none">No list</option>
+            {lists.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
+
+      {task.parent_id === null && (
+        <fieldset className="flex flex-wrap items-center gap-2 text-sm">
+          <legend className="sr-only">Repeat</legend>
+          <span className="text-zinc-500">Repeat</span>
+          <select value={frequency} onChange={(e) => setFrequency(e.target.value as typeof frequency)} aria-label="Repeat frequency" className={control}>
+            <option value="none">Never</option>
+            {RECURRENCE_FREQUENCIES.map((f) => (
+              <option key={f} value={f}>
+                {label(f)}
+              </option>
+            ))}
+          </select>
+          {frequency !== "none" && (
+            <>
+              <label className="flex items-center gap-1">
+                <span className="text-zinc-500">every</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={interval}
+                  onChange={(e) => setRepeatEvery(Math.max(1, Number(e.target.value) || 1))}
+                  aria-label="Repeat interval"
+                  className={`${control} w-16`}
+                />
+              </label>
+              <label className="flex items-center gap-1">
+                <span className="text-zinc-500">until</span>
+                <input type="date" value={until} onChange={(e) => setUntil(e.target.value)} aria-label="Repeat until" className={control} />
+              </label>
+              {!due && <span className="text-amber-700 dark:text-amber-400">Set a due date to repeat</span>}
+            </>
+          )}
+        </fieldset>
+      )}
+
+      <DependencyEditor task={task} onChanged={onDependenciesChanged} onError={onError} />
+
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onCancel} className="px-3 py-1.5 text-sm underline">
           Cancel
@@ -193,5 +281,57 @@ function TaskEditor({
         </button>
       </div>
     </form>
+  );
+}
+
+/** Adds/removes "waits for" links immediately (not on Save). */
+function DependencyEditor({ task, onChanged, onError }: { task: Task; onChanged: () => void; onError: (err: unknown) => void }) {
+  const [deps, setDeps] = useState<TaskRef[]>(task.dependencies);
+  const [candidates, setCandidates] = useState<Task[]>([]);
+
+  useEffect(() => {
+    listTasks({ status: "open", per_page: 100, sort: "due_at" })
+      .then((r) => setCandidates(r.data))
+      .catch(onError);
+  }, [onError]);
+
+  async function apply(action: () => Promise<Task>) {
+    try {
+      const updated = await action();
+      setDeps(updated.dependencies);
+      onChanged();
+    } catch (err) {
+      onError(err);
+    }
+  }
+
+  const available = candidates.filter((c) => c.id !== task.id && !deps.some((d) => d.id === c.id));
+  const control = "rounded-md border border-zinc-300 bg-transparent px-2 py-1.5 text-sm dark:border-zinc-700";
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      <span className="text-zinc-500">Waits for</span>
+      {deps.map((d) => (
+        <span key={d.id} className="flex items-center gap-1 rounded bg-zinc-100 px-2 py-0.5 dark:bg-zinc-800">
+          <span className={isClosed(d.status) ? "text-zinc-500 line-through" : ""}>{d.title}</span>
+          <button type="button" onClick={() => apply(() => removeDependency(task.id, d.id))} aria-label={`Remove dependency on ${d.title}`} className="text-zinc-500 hover:text-red-600">
+            ×
+          </button>
+        </span>
+      ))}
+      <select
+        value=""
+        onChange={(e) => e.target.value && apply(() => addDependency(task.id, Number(e.target.value)))}
+        aria-label="Add a task this one waits for"
+        className={control}
+      >
+        <option value="">+ Add task…</option>
+        {available.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.title}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }

@@ -56,6 +56,8 @@ export default function TasksView() {
   const [version, setVersion] = useState(0);
 
   const reload = useCallback(() => setVersion((v) => v + 1), []);
+  // Stable identity: child components list it as an effect dependency.
+  const showError = useCallback((err: unknown) => setError(errorMessage(err)), []);
 
   useEffect(() => {
     getMe()
@@ -141,7 +143,7 @@ export default function TasksView() {
             if (deletedId !== undefined && deletedId === listId) setListId(null);
             reload();
           }}
-          onError={(err) => setError(errorMessage(err))}
+          onError={showError}
         />
 
         <main className="flex min-w-0 flex-col gap-4">
@@ -151,7 +153,7 @@ export default function TasksView() {
             lists={lists}
             defaultListId={listId}
             onCreated={reload}
-            onError={(err) => setError(errorMessage(err))}
+            onError={showError}
           />
 
           <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -210,7 +212,7 @@ export default function TasksView() {
                   lists={lists}
                   showList={listId === null}
                   onChanged={reload}
-                  onError={(err) => setError(errorMessage(err))}
+                  onError={showError}
                 />
               ))}
             </ul>
