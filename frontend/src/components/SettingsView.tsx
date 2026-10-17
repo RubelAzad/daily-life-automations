@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import AppHeader, { ErrorBanner } from "@/components/AppHeader";
 import { ApiError, deviceTimeZone, getSettings, updateSettings, WEEK_START_OPTIONS, type ApprovalMode, type Settings, type WeekStart } from "@/lib/api";
@@ -191,7 +192,11 @@ export default function SettingsView() {
             </div>
             {fieldError("ai_approval_mode")}
             <p className="text-xs text-zinc-500">
-              Sending messages, spending money, deleting data and making bookings always need your approval. The assistant arrives in Phase 2.
+              Sending messages, spending money, deleting data and making bookings always need your approval. Review requests and everything the assistant did on the{" "}
+              <Link href="/ai" className="underline">
+                AI page
+              </Link>
+              .
             </p>
           </section>
 

@@ -12,6 +12,7 @@ const NAV = [
   { href: "/projects", label: "Projects" },
   { href: "/notes", label: "Notes" },
   { href: "/reminders", label: "Reminders" },
+  { href: "/ai", label: "AI" },
 ];
 
 export default function AppHeader({ user }: { user: User }) {

@@ -41,6 +41,35 @@ Base URL: `http://localhost:8080/api/v1`. Request and response bodies are JSON.
 | `reminders` | Scheduled reminders that fire before the day ends, at most 50 |
 | `expiring_notes` | Notes (not archived) expired or expiring within 30 days, soonest first, at most 10 |
 
+## AI assistant
+
+The model can only use the tools in the allowlist below, with input decoded strictly (unknown fields are rejected) and validated by the same services as the REST API. The user is always the signed-in user; no tool takes a `user_id`. The assistant can't run SQL, shell commands or web requests of its own.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/ai/status` | `{enabled, provider, model, reason, tools: [{name, description, risk}]}`. `reason` explains why AI is off. The API key is never returned. |
+| POST | `/ai/ping` | Tiny model call to check the key and connection: `{reply, model, duration_ms, input_tokens, output_tokens, action_id}`. `503` when AI is off, `429` within 10 s of the last ping, `502` with the provider's message if the call fails (e.g. invalid key). |
+| GET | `/ai/actions` | The audit log, newest first. Query: `status` (comma-separated), `kind` (`tool`, `llm_call`), `page`, `per_page` (≤ 100). |
+| GET | `/ai/actions/:id` | One entry |
+| POST | `/ai/actions/:id/approve` | Runs a pending action once. Returns the entry with its final `status` (`succeeded`/`failed`), `output` and `error`. `409` if it isn't pending or has expired. |
+| POST | `/ai/actions/:id/reject` | Discards a pending action. `409` if it isn't pending. |
+
+**Tools and risk:**
+
+| Risk | Tools | Needs approval |
+|---|---|---|
+| `read` | `get_today`, `list_tasks`, `list_events`, `search_notes` | Never |
+| `low` | `create_task`, `complete_task`, `reschedule_task`, `carry_forward_tasks`, `create_event`, `create_note`, `create_reminder` | When `ai_approval_mode` is `always` (the default) |
+| `high` | `delete_task` | Always. Sending, spending, deleting and booking can never skip approval. |
+
+**Audit log entries** (`kind`):
+- `llm_call`: model, token counts, duration and any error. **Prompts and replies are not stored.**
+- `tool`: tool, risk, a human-readable `summary` (what you approve), `input` and `output`.
+  - **Redaction:** `input` and `output` are redacted copies. Values of fields like `password`, `token`, `api_key` and `pin` are removed, as are API keys and card numbers (Luhn-checked). Both are capped at 8 KB.
+  - **Pending actions:** the exact input is kept only while the action waits for approval, then deleted.
+  - **Status:** `succeeded`, `failed`, `pending_approval`, `running`, `rejected` or `expired`. Pending actions show `expires_at`: they expire 24 h after being proposed.
+  - **Every attempt is logged,** including unknown tools (`rejected`) and invalid input (`failed`).
+
 ## Settings
 
 | Method | Path | Notes |

@@ -35,6 +35,21 @@ DB settings are separate variables (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, 
 
 Check: http://localhost:8080/api/v1/health → `{"database":"connected","status":"ok"}`
 
+## AI assistant (optional)
+
+AI features use the Claude API and stay off until a key is set. In `backend/.env`:
+
+```
+ANTHROPIC_API_KEY=sk-ant-...      # from https://console.anthropic.com/ — never commit it
+AI_MODEL=claude-sonnet-5-5        # optional
+```
+
+Restart the API. The startup log says `AI enabled` or `AI disabled`, and the **AI** page has a *Test connection* button. Each test is a real (very small) paid call.
+
+For offline development, `AI_PROVIDER=fake` uses a stand-in that makes no network calls (only allowed with `APP_ENV=local`).
+
+Executor tests that use the real database run separately: `go test -tags integration ./internal/ai/`.
+
 ## Worker (reminders)
 
 The worker is a separate process that turns due reminders into notifications. Without it, reminders are saved but never delivered.
