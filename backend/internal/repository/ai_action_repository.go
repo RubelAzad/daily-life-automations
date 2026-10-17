@@ -20,25 +20,45 @@ type AIActionFilter struct {
 	Statuses       []string
 	Kind           string
 	ConversationID *uint64
+	AutomationID   *uint64
 	Limit          int
 	Offset         int
 }
 
-const aiActionColumns = `id, user_id, kind, source, conversation_id, tool, risk, summary, input, pending_input, output, status, error,
+const aiActionColumns = `id, user_id, kind, source, conversation_id, automation_id, idempotency_key, tool, risk, summary, input, pending_input, output, status, error,
 	model, input_tokens, output_tokens, duration_ms, decided_at, executed_at, created_at, updated_at`
 
 func (r AIActionRepository) Create(ctx context.Context, a models.AIAction) (uint64, error) {
 	res, err := r.DB.ExecContext(ctx,
-		`INSERT INTO ai_actions (user_id, kind, source, conversation_id, tool, risk, summary, input, pending_input, output, status, error,
+		`INSERT INTO ai_actions (user_id, kind, source, conversation_id, automation_id, idempotency_key, tool, risk, summary, input, pending_input, output, status, error,
 		                         model, input_tokens, output_tokens, duration_ms, decided_at, executed_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.UserID, a.Kind, a.Source, a.ConversationID, a.Tool, a.Risk, a.Summary, jsonArg(a.Input), jsonArg(a.PendingInput), jsonArg(a.Output),
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.UserID, a.Kind, a.Source, a.ConversationID, a.AutomationID, a.IdempotencyKey, a.Tool, a.Risk, a.Summary, jsonArg(a.Input), jsonArg(a.PendingInput), jsonArg(a.Output),
 		a.Status, a.Error, a.Model, a.InputTokens, a.OutputTokens, a.DurationMS, utcPtr(a.DecidedAt), utcPtr(a.ExecutedAt))
 	if err != nil {
 		return 0, err
 	}
 	id, err := res.LastInsertId()
 	return uint64(id), err
+}
+
+// GetByKey finds the action recorded under an idempotency key.
+func (r AIActionRepository) GetByKey(ctx context.Context, userID uint64, key string) (models.AIAction, error) {
+	a, err := scanAIAction(r.DB.QueryRowContext(ctx,
+		`SELECT `+aiActionColumns+` FROM ai_actions WHERE idempotency_key = ? AND user_id = ?`, key, userID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return a, ErrNotFound
+	}
+	return a, err
+}
+
+// CountForAutomationSince counts the tool calls an automation made since t,
+// for its rate limit.
+func (r AIActionRepository) CountForAutomationSince(ctx context.Context, automationID uint64, t time.Time) (int, error) {
+	var n int
+	err := r.DB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM ai_actions WHERE automation_id = ? AND created_at >= ?`, automationID, t.UTC()).Scan(&n)
+	return n, err
 }
 
 func (r AIActionRepository) Get(ctx context.Context, userID, id uint64) (models.AIAction, error) {
@@ -67,6 +87,10 @@ func (r AIActionRepository) List(ctx context.Context, userID uint64, f AIActionF
 	if f.ConversationID != nil {
 		where = append(where, "conversation_id = ?")
 		args = append(args, *f.ConversationID)
+	}
+	if f.AutomationID != nil {
+		where = append(where, "automation_id = ?")
+		args = append(args, *f.AutomationID)
 	}
 	whereSQL := strings.Join(where, " AND ")
 
@@ -158,7 +182,7 @@ func scanAIAction(row rowScanner) (models.AIAction, error) {
 		a                      models.AIAction
 		input, pending, output []byte
 	)
-	err := row.Scan(&a.ID, &a.UserID, &a.Kind, &a.Source, &a.ConversationID, &a.Tool, &a.Risk, &a.Summary, &input, &pending, &output, &a.Status, &a.Error,
+	err := row.Scan(&a.ID, &a.UserID, &a.Kind, &a.Source, &a.ConversationID, &a.AutomationID, &a.IdempotencyKey, &a.Tool, &a.Risk, &a.Summary, &input, &pending, &output, &a.Status, &a.Error,
 		&a.Model, &a.InputTokens, &a.OutputTokens, &a.DurationMS, &a.DecidedAt, &a.ExecutedAt, &a.CreatedAt, &a.UpdatedAt)
 	a.Input, a.PendingInput, a.Output = rawJSON(input), rawJSON(pending), rawJSON(output)
 	return a, err

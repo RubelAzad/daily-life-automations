@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"lifeos-ai/backend/internal/models"
+	"lifeos-ai/backend/internal/repository"
 	"lifeos-ai/backend/internal/services"
 )
 
@@ -20,6 +21,8 @@ type Deps struct {
 	Reminders services.ReminderService
 	Today     services.TodayService
 	Search    services.SearchService
+	// Notifications is used by the automation-only notify tool.
+	Notifications repository.NotificationRepository
 }
 
 const (

@@ -131,6 +131,7 @@ type ListActionsInput struct {
 	Status         string // comma-separated statuses
 	Kind           string
 	ConversationID string
+	AutomationID   string
 	Page           string
 	PerPage        string
 }
@@ -156,6 +157,14 @@ func (s Service) ListActions(ctx context.Context, userID uint64, in ListActionsI
 			fields["conversation_id"] = "must be an ID"
 		} else {
 			f.ConversationID = &id
+		}
+	}
+	if in.AutomationID != "" {
+		id, err := strconv.ParseUint(in.AutomationID, 10, 64)
+		if err != nil {
+			fields["automation_id"] = "must be an ID"
+		} else {
+			f.AutomationID = &id
 		}
 	}
 	meta := services.PageMeta{Page: 1, PerPage: 20}

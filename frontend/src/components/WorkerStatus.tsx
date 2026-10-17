@@ -8,6 +8,7 @@ const JOB_LABELS: Record<string, string> = {
   "reminders.deliver": "Reminder delivery",
   "briefings.run": "Scheduled briefings",
   "search.index": "Search indexing",
+  "automation.scan_overdue": "Overdue-task check for automations",
   "scheduler.prune": "Clean-up of old jobs",
 };
 
@@ -77,7 +78,7 @@ export function WorkerSection({ className }: { className: string }) {
             </ul>
           )}
           <p className="text-xs text-zinc-500">
-            The worker delivers reminders, writes scheduled briefings and makes uploaded files searchable. Its jobs are saved in the database, so nothing is lost
+            The worker delivers reminders, writes scheduled briefings, runs your automations and makes uploaded files searchable. Its jobs are saved in the database, so nothing is lost
             if it restarts.
           </p>
         </>

@@ -58,7 +58,7 @@ The model can only use the tools in the allowlist below, with input decoded stri
 |---|---|---|
 | GET | `/ai/status` | `{enabled, provider, model, reason, tools: [{name, description, risk}]}`. `reason` explains why AI is off. The API key is never returned. |
 | POST | `/ai/ping` | Tiny model call to check the key and connection: `{reply, model, duration_ms, input_tokens, output_tokens, action_id}`. `503` when AI is off, `429` within 10 s of the last ping, `502` with the provider's message if the call fails (e.g. invalid key). |
-| GET | `/ai/actions` | The audit log, newest first. Query: `status` (comma-separated), `kind` (`tool`, `llm_call`), `conversation_id`, `page`, `per_page` (≤ 100). |
+| GET | `/ai/actions` | The audit log, newest first. Query: `status` (comma-separated), `kind` (`tool`, `llm_call`), `conversation_id`, `automation_id`, `page`, `per_page` (≤ 100). Entries have `source` (`chat`, `automation`, …) and `automation_id`. |
 | GET | `/ai/actions/:id` | One entry |
 | POST | `/ai/actions/:id/approve` | Runs a pending action once. Returns the entry with its final `status` (`succeeded`/`failed`), `output` and `error`. `409` if it isn't pending or has expired. |
 | POST | `/ai/actions/:id/reject` | Discards a pending action. `409` if it isn't pending. |
@@ -140,6 +140,48 @@ A morning plan and an evening wrap-up, written by the model from the user's day.
   - **Pending actions:** the exact input is kept only while the action waits for approval, then deleted.
   - **Status:** `succeeded`, `failed`, `pending_approval`, `running`, `rejected` or `expired`. Pending actions show `expires_at`: they expire 24 h after being proposed.
   - **Every attempt is logged,** including unknown tools (`rejected`) and invalid input (`failed`).
+
+## Automations
+
+Module 18: **when** a trigger fires, **if** the conditions hold, **then** run the actions. Actions are tool calls through the same allowlist, approval policy and audit log as the assistant (see [AI assistant](#ai-assistant)), with `source: "automation"` and the automation's `automation_id`.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/automations/catalog` | `{triggers: [{type, label, description, fields, placeholders, run_now}], actions: [{type, label, description}], operators: {text, choice, tags, date}}`, for building the editor. |
+| GET | `/automations` | The user's automations, by name. |
+| POST | `/automations` | `name` (1–100), `trigger`, `conditions` (optional), `actions`, `enabled` (default `true`). `422` with `fields` keyed like `trigger.schedule.time`, `conditions[0]`, `actions[1]`. At most 50 per user. |
+| GET | `/automations/:id` | One automation |
+| PATCH | `/automations/:id` | Any POST field. Changing the trigger type clears conditions unless you send new ones. |
+| DELETE | `/automations/:id` | `204`. Its past actions stay in the audit log. |
+| POST | `/automations/:id/run` | Runs a `schedule` or `manual` automation now (the schedule doesn't move) and returns `{status, error, actions: [{action_id, status, summary, error}]}`. `409` for event triggers, which need an event. |
+
+**Read-only fields:** `next_run_at` (schedule triggers), `last_run_at`, `last_status` (`succeeded`, `waiting_approval`, `failed`, `skipped`), `last_error`, `run_count`.
+
+**Triggers** (`trigger.type`):
+
+| Type | Fires | Condition fields |
+|---|---|---|
+| `schedule` | At `trigger.schedule`: `{frequency: "daily"\|"weekly"\|"monthly"\|"once", time: "HH:MM", weekdays: [1–7] (weekly, 1 = Monday), month_day: 1–31 (monthly; the last day in shorter months), date: "YYYY-MM-DD" (once)}`, in the user's time zone. A run more than 3 hours late (no worker running) is skipped. | — |
+| `task.created` | A task is added | `task.title`, `task.description`, `task.priority`, `task.list`, `task.project`, `task.due_at` |
+| `task.completed` | A task is marked completed | same as above |
+| `task.overdue` | An open task passes its due time (checked every `WORKER_INTERVAL_SECONDS`; tasks that went overdue in the last 24 h). Once per task and due time. | same as above |
+| `note.created` | A note is saved | `note.title`, `note.kind`, `note.tags`, `note.url`, `note.expires_on` |
+| `manual` | Only by `POST /automations/:id/run` | — |
+
+**Conditions:** `[{field, op, value}]`, all must hold, at most 10. Operators by field type: text `equals`, `not_equals`, `contains`, `not_contains`, `is_set`, `is_not_set` (case-insensitive); choice (`priority`, `kind`) `equals`, `not_equals`, `in`, `not_in` (value is a list); tags `contains`, `not_contains`, `is_set`, `is_not_set`; dates `is_set`, `is_not_set`. Conditions see the task or note as it was when the event happened.
+
+**Actions:** `[{type, input}]`, 1–5, run in order; a failed step stops the run. `type` is one of `notify` (`title`, `body`, `link`: an app path like `/tasks`), `create_task`, `complete_task`, `reschedule_task`, `create_note`, `create_reminder`, with the same input as the assistant's tools. Nothing that deletes, sends or spends.
+- **Placeholders** in strings: `{{automation.name}}`, `{{today}}` (local `YYYY-MM-DD`), `{{now}}`, and for task triggers `{{task.id}}`, `{{task.title}}`, `{{task.priority}}`, `{{task.status}}`, `{{task.list}}`, `{{task.project}}`, `{{task.due}}` (local, readable), for notes `{{note.id}}`, `{{note.title}}`, `{{note.kind}}`, `{{note.url}}`, `{{note.tags}}`. `"task_id": "{{task.id}}"` becomes the number. A placeholder the trigger doesn't have is a `422`.
+- **Relative times** in `due_at` and `remind_at`: `+30m`, `+2h`, `+1d`, `+1d 09:00`, `today 17:00`, `tomorrow 09:00` (local), or RFC 3339.
+- **Checked on save:** each action is decoded strictly against its tool's schema with sample values, so a broken action is a `422`, not a failed run later.
+
+**Approval:** actions follow `ai_approval_mode`. With `always` (the default), changes wait on the AI activity page and the user gets a notification ("… is waiting for your approval"); the run's status is `waiting_approval`. `notify` never needs approval.
+
+**Safety:**
+- **No loops:** an automation never reacts to its own changes, and chains (A's task triggers B, whose task triggers C, …) stop after 3 levels.
+- **Rate limit:** an automation that would take more than 60 actions in an hour is paused for that run (`failed`, with the reason).
+- **Exactly once:** events are queued in the same transaction as the change, so they exist only if it committed; each event runs each automation once (idempotency keys), and a retried run skips the actions it already took.
+- **Isolation:** another user's automation is a `404`.
 
 ## Settings
 

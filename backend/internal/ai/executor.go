@@ -38,6 +38,10 @@ type Executor struct {
 type Origin struct {
 	Source         string // chat | automation | test
 	ConversationID *uint64
+	AutomationID   *uint64
+	// Key makes the call idempotent: if an action was already recorded under
+	// it (a retried automation run), its result is returned and nothing runs.
+	Key string
 }
 
 // Result is what the assistant learns about a tool call.
@@ -61,9 +65,21 @@ func (e Executor) now() time.Time {
 // risk and the user's ai_approval_mode. The returned error is only for
 // internal failures; tool and input errors are reported in the Result.
 func (e Executor) Propose(ctx context.Context, userID uint64, origin Origin, name string, input json.RawMessage) (Result, error) {
+	if origin.Key != "" {
+		prev, err := e.Actions.GetByKey(ctx, userID, origin.Key)
+		if err == nil {
+			return Result{ActionID: prev.ID, Status: prev.Status, Summary: deref(prev.Summary), Output: prev.Output, Error: deref(prev.Error)}, nil
+		}
+		if !errors.Is(err, repository.ErrNotFound) {
+			return Result{}, err
+		}
+	}
 	action := models.AIAction{
 		UserID: userID, Kind: models.AIActionTool, Source: origin.Source, ConversationID: origin.ConversationID,
-		Tool: strPtr(truncateRunes(name, 64)), Input: RedactJSON(input),
+		AutomationID: origin.AutomationID, Tool: strPtr(truncateRunes(name, 64)), Input: RedactJSON(input),
+	}
+	if origin.Key != "" {
+		action.IdempotencyKey = &origin.Key
 	}
 
 	tool, ok := e.Tools.Get(name)

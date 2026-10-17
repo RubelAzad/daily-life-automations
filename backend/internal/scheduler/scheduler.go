@@ -220,6 +220,7 @@ func (s *Scheduler) Drain(ctx context.Context) (Stats, error) {
 		sem   = make(chan struct{}, s.concurrency())
 		seen  = map[uint64]bool{}
 	)
+	started, checked, waits := 0, -1, 0
 	for ctx.Err() == nil {
 		sem <- struct{}{}
 		job, ok, err := s.claim(ctx)
@@ -231,9 +232,26 @@ func (s *Scheduler) Drain(ctx context.Context) (Stats, error) {
 				s.release(ctx, job)
 			}
 			wg.Wait()
+			// Jobs that were still running may have queued more work (an
+			// event queues its automation runs): look again until a check
+			// after everything finished finds nothing new.
+			if err == nil && started != checked {
+				checked = started
+				continue
+			}
+			// Due jobs another claimer was looking at were skipped: wait a
+			// moment for them rather than leaving them for the next pass.
+			if err == nil && !ok && waits < 40 {
+				if n, cerr := (repository.JobRepository{DB: s.DB}).CountDue(ctx, s.kinds(), s.now()); cerr == nil && n > 0 {
+					waits++
+					time.Sleep(25 * time.Millisecond)
+					continue
+				}
+			}
 			return stats, err
 		}
 		seen[job.ID] = true
+		started++
 		wg.Go(func() {
 			defer func() { <-sem }()
 			outcome := s.run(job)

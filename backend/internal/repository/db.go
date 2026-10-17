@@ -19,12 +19,23 @@ func InTx(ctx context.Context, db DBTX, fn func(tx DBTX) error) error {
 	return inTx(ctx, db, fn)
 }
 
+// inTxReadCommitted is InTx at READ COMMITTED: no gap locks, so a
+// SELECT ... FOR UPDATE SKIP LOCKED on a queue table doesn't block inserts
+// into it. db must be a *sql.DB.
+func inTxReadCommitted(ctx context.Context, db DBTX, fn func(DBTX) error) error {
+	return beginTx(ctx, db, &sql.TxOptions{Isolation: sql.LevelReadCommitted}, fn)
+}
+
 func inTx(ctx context.Context, db DBTX, fn func(DBTX) error) error {
+	return beginTx(ctx, db, nil, fn)
+}
+
+func beginTx(ctx context.Context, db DBTX, opts *sql.TxOptions, fn func(DBTX) error) error {
 	sqlDB, ok := db.(*sql.DB)
 	if !ok {
 		return fn(db)
 	}
-	tx, err := sqlDB.BeginTx(ctx, nil)
+	tx, err := sqlDB.BeginTx(ctx, opts)
 	if err != nil {
 		return err
 	}

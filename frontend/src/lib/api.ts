@@ -654,6 +654,8 @@ export type AIAction = {
   kind: "tool" | "llm_call";
   source: string;
   conversation_id: number | null;
+  /** The automation that took this action, if any. */
+  automation_id: number | null;
   tool: string | null;
   risk: AIRisk | null;
   summary: string | null;
@@ -817,4 +819,69 @@ export type WorkerStatus = { running: boolean; last_seen_at: string | null; jobs
 /** Whether the background worker is processing jobs. */
 export async function getSystemStatus() {
   return (await request<{ data: { worker: WorkerStatus } }>("/system/status")).data.worker;
+}
+
+// ---- Automations -----------------------------------------------------------
+
+export type Schedule = {
+  frequency: "daily" | "weekly" | "monthly" | "once";
+  time: string; // HH:MM, your time zone
+  weekdays?: number[]; // weekly: 1 = Monday … 7 = Sunday
+  month_day?: number; // monthly
+  date?: string; // once: YYYY-MM-DD
+};
+
+export type Trigger = { type: string; schedule?: Schedule };
+export type Condition = { field: string; op: string; value?: string | string[] };
+/** Strings in input may use {{placeholders}}; due_at and remind_at may be relative ("+1d", "tomorrow 09:00"). */
+export type AutomationAction = { type: string; input: Record<string, unknown> };
+export type RunStatus = "succeeded" | "waiting_approval" | "failed" | "skipped";
+
+export type Automation = {
+  id: number;
+  name: string;
+  enabled: boolean;
+  trigger: Trigger;
+  conditions: Condition[];
+  actions: AutomationAction[];
+  next_run_at: string | null;
+  last_run_at: string | null;
+  last_status: RunStatus | null;
+  last_error: string | null;
+  run_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AutomationField = { name: string; label: string; type: "text" | "choice" | "tags" | "date"; choices?: string[] };
+export type TriggerSpec = { type: string; label: string; description: string; fields: AutomationField[]; placeholders: string[]; run_now: boolean };
+export type ActionSpec = { type: string; label: string; description: string };
+export type AutomationCatalog = { triggers: TriggerSpec[]; actions: ActionSpec[]; operators: Record<AutomationField["type"], string[]> };
+
+export type AutomationInput = Partial<Pick<Automation, "name" | "enabled" | "trigger" | "conditions" | "actions">>;
+export type RunResult = { status: RunStatus; error: string | null; actions: { action_id: number; status: string; summary?: string; error?: string }[] };
+
+export async function getAutomationCatalog() {
+  return (await request<{ data: AutomationCatalog }>("/automations/catalog")).data;
+}
+
+export async function listAutomations() {
+  return (await request<{ data: Automation[] }>("/automations")).data;
+}
+
+export async function createAutomation(input: AutomationInput) {
+  return (await request<{ data: Automation }>("/automations", { method: "POST", body: JSON.stringify(input) })).data;
+}
+
+export async function updateAutomation(id: number, input: AutomationInput) {
+  return (await request<{ data: Automation }>(`/automations/${id}`, { method: "PATCH", body: JSON.stringify(input) })).data;
+}
+
+export function deleteAutomation(id: number) {
+  return request<void>(`/automations/${id}`, { method: "DELETE" });
+}
+
+/** Runs a schedule or manual automation now. */
+export async function runAutomation(id: number) {
+  return (await request<{ data: RunResult }>(`/automations/${id}/run`, { method: "POST" })).data;
 }

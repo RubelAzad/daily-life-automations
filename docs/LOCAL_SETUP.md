@@ -59,7 +59,7 @@ Executor tests that use the real database run separately: `go test -tags integra
 
 ## Worker (background jobs)
 
-The worker is a separate process that runs background jobs: it turns due reminders into notifications, writes scheduled AI briefings and keeps the search index current. Without it, reminders are saved but never delivered; Today and Settings show a warning when it isn't running.
+The worker is a separate process that runs background jobs: it turns due reminders into notifications, writes scheduled AI briefings, runs automations (Automations page) and keeps the search index current. Without it, reminders are saved but never delivered; Today and Settings show a warning when it isn't running.
 
 ```powershell
 cd backend
@@ -75,6 +75,8 @@ go run ./cmd/worker -once      # run every system job and anything else that is 
 - Finished one-off jobs are deleted after 30 days (failed ones after 90).
 
 It's safe to run more than one worker, or to restart one at any time: each system job runs in one worker at a time, reminders are also claimed with a row lock, and each notification has a unique key, so nothing is delivered twice.
+
+Automations run here: their schedules, the events that trigger them (`task.created`, …, queued by the API in the same transaction as the change) and the overdue-task check. Without a worker they don't run, except **Run now**, which runs in the API.
 
 Scheduled AI briefings are only made for users who turned them on in Settings, and only when AI is configured. Search indexing extracts text from uploads the API didn't get to (and from files uploaded before search existed) and re-indexes changed notes.
 

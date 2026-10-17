@@ -32,7 +32,7 @@ func (h AIHandler) Ping(c *gin.Context) {
 
 func (h AIHandler) ListActions(c *gin.Context) {
 	actions, meta, err := h.AI.ListActions(c.Request.Context(), middleware.CurrentUser(c).ID, ai.ListActionsInput{
-		Status: c.Query("status"), Kind: c.Query("kind"), ConversationID: c.Query("conversation_id"),
+		Status: c.Query("status"), Kind: c.Query("kind"), ConversationID: c.Query("conversation_id"), AutomationID: c.Query("automation_id"),
 		Page: c.Query("page"), PerPage: c.Query("per_page"),
 	})
 	if err != nil {
