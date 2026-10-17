@@ -1,15 +1,19 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import {
   addDependency,
   deleteTask,
+  getProject,
   listTasks,
   RECURRENCE_FREQUENCIES,
   removeDependency,
   TASK_PRIORITIES,
   TASK_STATUSES,
   updateTask,
+  type Milestone,
+  type Project,
   type RecurrenceFrequency,
   type Task,
   type TaskList,
@@ -31,7 +35,10 @@ import Subtasks from "./Subtasks";
 type Props = {
   task: Task;
   lists: TaskList[];
+  /** Enables the project badge and the project/milestone picker in the editor. */
+  projects?: Project[];
   showList: boolean;
+  showProject?: boolean;
   onChanged: () => void;
   onError: (err: unknown) => void;
 };
@@ -46,7 +53,7 @@ const PRIORITY_STYLE: Record<TaskPriority, string> = {
 const label = (s: string) => (s[0].toUpperCase() + s.slice(1)).replace("_", " ");
 const isClosed = (s: TaskStatus) => s === "completed" || s === "cancelled";
 
-export default function TaskItem({ task, lists, showList, onChanged, onError }: Props) {
+export default function TaskItem({ task, lists, projects, showList, showProject = true, onChanged, onError }: Props) {
   const [editing, setEditing] = useState(false);
   const [showSubtasks, setShowSubtasks] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -54,6 +61,7 @@ export default function TaskItem({ task, lists, showList, onChanged, onError }: 
   const done = task.status === "completed";
   const closed = isClosed(task.status);
   const list = lists.find((l) => l.id === task.list_id);
+  const project = projects?.find((p) => p.id === task.project_id);
   const waitingOn = task.dependencies.filter((d) => !isClosed(d.status));
   const cannotComplete = task.blocked && !done;
 
@@ -75,6 +83,7 @@ export default function TaskItem({ task, lists, showList, onChanged, onError }: 
         <TaskEditor
           task={task}
           lists={lists}
+          projects={projects}
           onCancel={() => setEditing(false)}
           onDependenciesChanged={onChanged}
           onError={onError}
@@ -124,6 +133,12 @@ export default function TaskItem({ task, lists, showList, onChanged, onError }: 
               Waiting on {waitingOn.map((d) => d.title).join(", ")}
             </span>
           )}
+          {showProject && project && (
+            <Link href={`/projects/${project.id}`} className="flex items-center gap-1 text-zinc-500 underline">
+              <span className="size-2 rotate-45" style={{ backgroundColor: project.color ?? "#a1a1aa" }} aria-hidden />
+              {project.name}
+            </Link>
+          )}
           {showList && list && (
             <span className="flex items-center gap-1 text-zinc-500">
               <span className="size-2 rounded-full" style={{ backgroundColor: list.color ?? "#a1a1aa" }} aria-hidden />
@@ -158,6 +173,7 @@ export default function TaskItem({ task, lists, showList, onChanged, onError }: 
 function TaskEditor({
   task,
   lists,
+  projects,
   onSave,
   onCancel,
   onDependenciesChanged,
@@ -165,6 +181,7 @@ function TaskEditor({
 }: {
   task: Task;
   lists: TaskList[];
+  projects?: Project[];
   onSave: (patch: Parameters<typeof updateTask>[1]) => void;
   onCancel: () => void;
   onDependenciesChanged: () => void;
@@ -179,10 +196,30 @@ function TaskEditor({
   const [frequency, setFrequency] = useState<RecurrenceFrequency | "none">(task.recurrence?.frequency ?? "none");
   const [interval, setRepeatEvery] = useState(task.recurrence?.interval ?? 1);
   const [until, setUntil] = useState(toDateInput(task.recurrence?.until ?? null));
+  const [projectId, setProjectId] = useState<string>(task.project_id ? String(task.project_id) : "none");
+  const [milestoneId, setMilestoneId] = useState<string>(task.milestone_id ? String(task.milestone_id) : "none");
+  const [milestones, setMilestones] = useState<Milestone[]>([]);
+
+  useEffect(() => {
+    if (projectId === "none") return;
+    let cancelled = false;
+    getProject(Number(projectId))
+      .then((p) => {
+        if (!cancelled) setMilestones(p.milestones ?? []);
+      })
+      .catch(onError);
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, onError]);
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
+    const projectPatch = projects
+      ? { project_id: projectId === "none" ? null : Number(projectId), milestone_id: milestoneId === "none" ? null : Number(milestoneId) }
+      : {};
     onSave({
+      ...projectPatch,
       title,
       description: description.trim() ? description : null,
       status,
@@ -233,6 +270,40 @@ function TaskEditor({
           </select>
         )}
       </div>
+
+      {task.parent_id === null && projects && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-zinc-500">Project</span>
+          <select
+            value={projectId}
+            onChange={(e) => {
+              setProjectId(e.target.value);
+              setMilestoneId("none"); // milestones belong to one project
+            }}
+            aria-label="Project"
+            className={control}
+          >
+            <option value="none">No project</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          {projectId !== "none" && milestones.some((m) => m.project_id === Number(projectId)) && (
+            <select value={milestoneId} onChange={(e) => setMilestoneId(e.target.value)} aria-label="Milestone" className={control}>
+              <option value="none">No milestone</option>
+              {milestones
+                .filter((m) => m.project_id === Number(projectId))
+                .map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.title}
+                  </option>
+                ))}
+            </select>
+          )}
+        </div>
+      )}
 
       {task.parent_id === null && (
         <fieldset className="flex flex-wrap items-center gap-2 text-sm">

@@ -20,16 +20,19 @@ func (r TaskRepository) InTx(ctx context.Context, fn func(TaskRepository) error)
 }
 
 type TaskFilter struct {
-	Statuses []string
-	Priority string
-	ListID   *uint64
-	ParentID *uint64 // nil = top-level tasks only
-	Query    string
-	DueFrom  *time.Time
-	DueTo    *time.Time
-	Sort     string
-	Limit    int
-	Offset   int
+	Statuses    []string
+	Priority    string
+	ListID      *uint64
+	ProjectID   *uint64
+	MilestoneID *uint64
+	NoMilestone bool    // tasks with no milestone (e.g. a project's "other tasks")
+	ParentID    *uint64 // nil = top-level tasks only
+	Query       string
+	DueFrom     *time.Time
+	DueTo       *time.Time
+	Sort        string
+	Limit       int
+	Offset      int
 }
 
 // taskOrders is the allowlist of sort keys; user input never reaches SQL.
@@ -49,7 +52,7 @@ func IsValidTaskSort(s string) bool {
 }
 
 const taskSelect = `
-	SELECT t.id, t.user_id, t.list_id, t.parent_id, t.title, t.description, t.status, t.priority,
+	SELECT t.id, t.user_id, t.list_id, t.project_id, t.milestone_id, t.parent_id, t.title, t.description, t.status, t.priority,
 	       t.due_at, t.completed_at, t.recurrence, t.recurrence_interval, t.recurrence_until,
 	       t.recurrence_anchor_at, t.next_task_id, t.created_at, t.updated_at,
 	       (SELECT COUNT(*) FROM tasks s WHERE s.parent_id = t.id),
@@ -79,6 +82,17 @@ func (r TaskRepository) List(ctx context.Context, userID uint64, f TaskFilter) (
 	if f.ListID != nil {
 		where = append(where, "t.list_id = ?")
 		args = append(args, *f.ListID)
+	}
+	if f.ProjectID != nil {
+		where = append(where, "t.project_id = ?")
+		args = append(args, *f.ProjectID)
+	}
+	switch {
+	case f.NoMilestone:
+		where = append(where, "t.milestone_id IS NULL")
+	case f.MilestoneID != nil:
+		where = append(where, "t.milestone_id = ?")
+		args = append(args, *f.MilestoneID)
 	}
 	if f.Query != "" {
 		pattern := "%" + escapeLike(f.Query) + "%"
@@ -145,10 +159,10 @@ func (r TaskRepository) Get(ctx context.Context, userID, id uint64) (models.Task
 func (r TaskRepository) Create(ctx context.Context, t models.Task) (models.Task, error) {
 	freq, interval, until := recurrenceColumns(t.Recurrence)
 	res, err := r.DB.ExecContext(ctx,
-		`INSERT INTO tasks (user_id, list_id, parent_id, title, description, status, priority, due_at, completed_at,
-		                    recurrence, recurrence_interval, recurrence_until, recurrence_anchor_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		t.UserID, t.ListID, t.ParentID, t.Title, t.Description, t.Status, t.Priority, utcPtr(t.DueAt), utcPtr(t.CompletedAt),
+		`INSERT INTO tasks (user_id, list_id, project_id, milestone_id, parent_id, title, description, status, priority,
+		                    due_at, completed_at, recurrence, recurrence_interval, recurrence_until, recurrence_anchor_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		t.UserID, t.ListID, t.ProjectID, t.MilestoneID, t.ParentID, t.Title, t.Description, t.Status, t.Priority, utcPtr(t.DueAt), utcPtr(t.CompletedAt),
 		freq, interval, until, utcPtr(t.RecurrenceAnchorAt))
 	if err != nil {
 		return models.Task{}, err
@@ -166,10 +180,11 @@ func (r TaskRepository) Update(ctx context.Context, t models.Task) (models.Task,
 	freq, interval, until := recurrenceColumns(t.Recurrence)
 	_, err := r.DB.ExecContext(ctx,
 		`UPDATE tasks
-		    SET list_id = ?, title = ?, description = ?, status = ?, priority = ?, due_at = ?, completed_at = ?,
-		        recurrence = ?, recurrence_interval = ?, recurrence_until = ?, recurrence_anchor_at = ?, next_task_id = ?
+		    SET list_id = ?, project_id = ?, milestone_id = ?, title = ?, description = ?, status = ?, priority = ?,
+		        due_at = ?, completed_at = ?, recurrence = ?, recurrence_interval = ?, recurrence_until = ?,
+		        recurrence_anchor_at = ?, next_task_id = ?
 		  WHERE id = ? AND user_id = ?`,
-		t.ListID, t.Title, t.Description, t.Status, t.Priority, utcPtr(t.DueAt), utcPtr(t.CompletedAt),
+		t.ListID, t.ProjectID, t.MilestoneID, t.Title, t.Description, t.Status, t.Priority, utcPtr(t.DueAt), utcPtr(t.CompletedAt),
 		freq, interval, until, utcPtr(t.RecurrenceAnchorAt), t.NextTaskID, t.ID, t.UserID)
 	if err != nil {
 		return models.Task{}, err
@@ -290,7 +305,7 @@ func scanTask(row rowScanner) (models.Task, error) {
 		interval int
 		until    *time.Time
 	)
-	err := row.Scan(&t.ID, &t.UserID, &t.ListID, &t.ParentID, &t.Title, &t.Description, &t.Status, &t.Priority,
+	err := row.Scan(&t.ID, &t.UserID, &t.ListID, &t.ProjectID, &t.MilestoneID, &t.ParentID, &t.Title, &t.Description, &t.Status, &t.Priority,
 		&t.DueAt, &t.CompletedAt, &freq, &interval, &until, &t.RecurrenceAnchorAt, &t.NextTaskID,
 		&t.CreatedAt, &t.UpdatedAt, &t.SubtaskCount, &t.SubtasksCompleted)
 	if freq.Valid {

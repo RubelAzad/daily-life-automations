@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"lifeos-ai/backend/internal/models"
 )
 
 // ValidationError carries per-field messages; handlers render it as 422.
@@ -68,6 +70,19 @@ func (c *checker) parseTime(field, value string) *time.Time {
 	}
 	t = t.UTC()
 	return &t
+}
+
+// parseDate accepts a calendar date "YYYY-MM-DD"; empty means no date.
+func (c *checker) parseDate(field, value string) *models.Date {
+	if value == "" {
+		return nil
+	}
+	t, err := time.Parse(models.DateLayout, value)
+	if err != nil {
+		c.fail(field, "must be a date like 2026-10-31")
+		return nil
+	}
+	return &models.Date{Time: t}
 }
 
 var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)

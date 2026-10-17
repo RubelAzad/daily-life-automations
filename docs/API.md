@@ -30,8 +30,8 @@ Base URL: `http://localhost:8080/api/v1`. Request and response bodies are JSON.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/tasks` | Top-level tasks only. Query: `status` (`open`, or comma-separated values from `pending,in_progress,completed,cancelled`), `priority`, `list_id`, `parent_id` (returns that task's subtasks instead, oldest first), `q` (searches title and description), `due_from`, `due_to`, `sort` (`due_at` default, `-due_at`, `created_at`, `-created_at`, `priority`), `page`, `per_page` (≤ 100, default 20) |
-| POST | `/tasks` | `title` (required, ≤ 255), `description`, `status` (default `pending`), `priority` (`low`/`medium`/`high`/`urgent`, default `medium`), `due_at`, `list_id`, `parent_id`, `recurrence` |
+| GET | `/tasks` | Top-level tasks only. Query: `status` (`open`, or comma-separated values from `pending,in_progress,completed,cancelled`), `priority`, `list_id`, `project_id`, `milestone_id` (an ID, or `none` for tasks without one), `parent_id` (returns that task's subtasks instead, oldest first), `q` (searches title and description), `due_from`, `due_to`, `sort` (`due_at` default, `-due_at`, `created_at`, `-created_at`, `priority`), `page`, `per_page` (≤ 100, default 20) |
+| POST | `/tasks` | `title` (required, ≤ 255), `description`, `status` (default `pending`), `priority` (`low`/`medium`/`high`/`urgent`, default `medium`), `due_at`, `list_id`, `project_id`, `milestone_id`, `parent_id`, `recurrence` |
 | GET | `/tasks/:id` | |
 | PATCH | `/tasks/:id` | Any of the POST fields except `parent_id`. Setting `status` to `completed` sets `completed_at`; changing it to anything else clears it. |
 | DELETE | `/tasks/:id` | `204`. Also deletes the task's subtasks and dependency links. |
@@ -56,6 +56,35 @@ Base URL: `http://localhost:8080/api/v1`. Request and response bodies are JSON.
 ### Dependencies
 - A task with any open dependency has `blocked: true`. It **cannot be set to `completed`** (`422`), but it can still be started (`in_progress`) or cancelled.
 - Dependencies must belong to the same user, and circular chains are rejected (A → B → C → A).
+
+### Projects on tasks
+- Giving only `milestone_id` sets `project_id` to that milestone's project. If both are given, they must match (`422`).
+- Changing `project_id` in a PATCH without also sending `milestone_id` clears the old milestone.
+- Subtasks belong to their parent's project and can't set one.
+- When a recurring task in a project is completed, the next occurrence keeps the same project and milestone.
+
+## Projects
+
+A project groups tasks toward a goal. It's separate from lists: a task can be in the Work list *and* in a project.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/projects` | Query: `status` (comma-separated values from `active,on_hold,completed,archived`; default is everything except archived), `page`, `per_page`. Ordered by active first, then nearest target date. |
+| POST | `/projects` | `name` (required, ≤ 150), `description` (project notes, ≤ 10 000), `status` (default `active`), `color` (`#rrggbb`), `start_date`, `target_date` (both `YYYY-MM-DD`; target must be on or after start) |
+| GET | `/projects/:id` | Includes `milestones` (always an array). List responses leave it out. |
+| PATCH | `/projects/:id` | Any of the POST fields. Setting `status` to `completed` sets `completed_at`. |
+| DELETE | `/projects/:id` | `204`. Deletes the project's milestones. Its tasks are kept, with `project_id` and `milestone_id` set to `null`. |
+| POST | `/projects/:id/milestones` | `title` (required), `description`, `due_date` (`YYYY-MM-DD`) |
+| PATCH | `/milestones/:id` | `title`, `description`, `due_date`, `completed` (`true`/`false`), `position` |
+| DELETE | `/milestones/:id` | `204`. Its tasks stay in the project with no milestone. |
+
+**Progress** counts top-level tasks only (subtasks don't count) and leaves out cancelled tasks:
+- Projects: `progress: {total_tasks, completed_tasks, overdue_tasks, percent, milestones, milestones_completed}`
+- Milestones: `progress: {total_tasks, completed_tasks, overdue_tasks, percent}`
+- `percent` is rounded down, and is `0` when there are no tasks. `overdue_tasks` counts open tasks whose `due_at` has passed.
+- A milestone is completed manually; it isn't completed automatically when its tasks are.
+
+**Dates:** `start_date`, `target_date` and `due_date` are calendar dates (`YYYY-MM-DD`) with no time zone, so "1 Dec" stays 1 Dec for every viewer.
 
 ## Task lists
 

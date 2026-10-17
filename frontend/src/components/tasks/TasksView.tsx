@@ -1,20 +1,10 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import {
-  ApiError,
-  getMe,
-  listTaskLists,
-  listTasks,
-  logout,
-  type PageMeta,
-  type Task,
-  type TaskList,
-  type TaskQuery,
-  type User,
-} from "@/lib/api";
+import AppHeader, { ErrorBanner } from "@/components/AppHeader";
+import { listProjects, listTaskLists, listTasks, type PageMeta, type Project, type Task, type TaskList, type TaskQuery } from "@/lib/api";
+import { errorMessage } from "@/lib/errors";
+import { useRequireUser } from "@/lib/useRequireUser";
 import ListSidebar from "./ListSidebar";
 import NewTaskForm from "./NewTaskForm";
 import TaskItem from "./TaskItem";
@@ -33,18 +23,10 @@ const SORTS: { value: NonNullable<TaskQuery["sort"]>; label: string }[] = [
 
 const PER_PAGE = 20;
 
-export function errorMessage(err: unknown): string {
-  if (err instanceof ApiError) {
-    const fields = err.fields ? Object.entries(err.fields).map(([k, v]) => `${k} ${v}`) : [];
-    return fields.length ? fields.join("; ") : err.message;
-  }
-  return "Could not reach the API. Is the backend running?";
-}
-
 export default function TasksView() {
-  const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
+  const { user, error: authError } = useRequireUser();
   const [lists, setLists] = useState<TaskList[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [listId, setListId] = useState<number | null>(null);
   const [status, setStatus] = useState("open");
   const [sort, setSort] = useState<NonNullable<TaskQuery["sort"]>>("due_at");
@@ -59,12 +41,6 @@ export default function TasksView() {
   // Stable identity: child components list it as an effect dependency.
   const showError = useCallback((err: unknown) => setError(errorMessage(err)), []);
 
-  useEffect(() => {
-    getMe()
-      .then((u) => (u ? setUser(u) : router.replace("/login")))
-      .catch((err) => setError(errorMessage(err)));
-  }, [router]);
-
   // Debounce the search box so typing doesn't fire a request per keystroke.
   useEffect(() => {
     const id = setTimeout(() => {
@@ -78,8 +54,11 @@ export default function TasksView() {
     if (!user) return;
     listTaskLists()
       .then(setLists)
-      .catch((err) => setError(errorMessage(err)));
-  }, [user, version]);
+      .catch(showError);
+    listProjects({ per_page: 100 })
+      .then((r) => setProjects(r.data))
+      .catch(showError);
+  }, [user, version, showError]);
 
   useEffect(() => {
     if (!user) return;
@@ -96,13 +75,8 @@ export default function TasksView() {
     };
   }, [user, status, sort, query, listId, page, version]);
 
-  async function onLogout() {
-    await logout();
-    router.replace("/login");
-  }
-
   if (!user) {
-    return <p className="p-6 text-zinc-500">{error ?? "Loading…"}</p>;
+    return <p className="p-6 text-zinc-500">{authError ?? "Loading…"}</p>;
   }
 
   const currentList = lists.find((l) => l.id === listId) ?? null;
@@ -110,26 +84,8 @@ export default function TasksView() {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <Link href="/" className="text-lg font-semibold tracking-tight">
-          LifeOS AI
-        </Link>
-        <div className="flex items-center gap-3 text-sm">
-          <span className="text-zinc-600 dark:text-zinc-400">{user.name}</span>
-          <button type="button" onClick={onLogout} className="underline">
-            Sign out
-          </button>
-        </div>
-      </header>
-
-      {error && (
-        <div className="flex items-start justify-between gap-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
-          <span>{error}</span>
-          <button type="button" onClick={() => setError(null)} aria-label="Dismiss error">
-            ×
-          </button>
-        </div>
-      )}
+      <AppHeader user={user} />
+      <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
       <div className="grid gap-6 md:grid-cols-[220px_1fr]">
         <ListSidebar
@@ -210,6 +166,7 @@ export default function TasksView() {
                   key={task.id}
                   task={task}
                   lists={lists}
+                  projects={projects}
                   showList={listId === null}
                   onChanged={reload}
                   onError={showError}

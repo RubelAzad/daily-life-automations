@@ -7,11 +7,15 @@ import { fromLocalInput } from "@/lib/format";
 type Props = {
   lists: TaskList[];
   defaultListId: number | null;
+  /** Adds the task to this project (and milestone) when set. */
+  projectId?: number;
+  milestoneId?: number | null;
+  placeholder?: string;
   onCreated: () => void;
   onError: (err: unknown) => void;
 };
 
-export default function NewTaskForm({ lists, defaultListId, onCreated, onError }: Props) {
+export default function NewTaskForm({ lists, defaultListId, projectId, milestoneId, placeholder, onCreated, onError }: Props) {
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<TaskPriority>("medium");
   const [due, setDue] = useState("");
@@ -31,6 +35,8 @@ export default function NewTaskForm({ lists, defaultListId, onCreated, onError }
         priority,
         due_at: fromLocalInput(due),
         list_id: listValue === "none" ? null : listValue,
+        project_id: projectId ?? null,
+        milestone_id: milestoneId ?? null,
       });
       setTitle("");
       setDue("");
@@ -51,7 +57,7 @@ export default function NewTaskForm({ lists, defaultListId, onCreated, onError }
       <input
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        placeholder="Add a task…"
+        placeholder={placeholder ?? "Add a task…"}
         maxLength={255}
         aria-label="Task title"
         className="w-full bg-transparent px-1 py-1 text-base outline-none"

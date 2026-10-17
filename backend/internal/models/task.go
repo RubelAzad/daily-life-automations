@@ -37,6 +37,8 @@ type Task struct {
 	ID          uint64      `json:"id"`
 	UserID      uint64      `json:"-"`
 	ListID      *uint64     `json:"list_id"`
+	ProjectID   *uint64     `json:"project_id"`
+	MilestoneID *uint64     `json:"milestone_id"`
 	ParentID    *uint64     `json:"parent_id"`
 	Title       string      `json:"title"`
 	Description *string     `json:"description"`

@@ -18,22 +18,25 @@ const (
 )
 
 type TaskService struct {
-	Tasks repository.TaskRepository
-	Lists repository.TaskListRepository
+	Tasks    repository.TaskRepository
+	Lists    repository.TaskListRepository
+	Projects repository.ProjectRepository
 }
 
 // ListTasksInput holds raw query-string values; the service validates them.
 type ListTasksInput struct {
-	Status   string // comma-separated, or "open" for pending+in_progress
-	Priority string
-	ListID   string
-	ParentID string // set to list a task's subtasks
-	Query    string
-	DueFrom  string
-	DueTo    string
-	Sort     string
-	Page     string
-	PerPage  string
+	Status      string // comma-separated, or "open" for pending+in_progress
+	Priority    string
+	ListID      string
+	ProjectID   string
+	MilestoneID string // an ID, or "none" for tasks without a milestone
+	ParentID    string // set to list a task's subtasks
+	Query       string
+	DueFrom     string
+	DueTo       string
+	Sort        string
+	Page        string
+	PerPage     string
 }
 
 type PageMeta struct {
@@ -55,6 +58,8 @@ type CreateTaskInput struct {
 	Priority    string           `json:"priority"`
 	DueAt       *string          `json:"due_at"`
 	ListID      *uint64          `json:"list_id"`
+	ProjectID   *uint64          `json:"project_id"`
+	MilestoneID *uint64          `json:"milestone_id"` // implies its project when project_id is omitted
 	ParentID    *uint64          `json:"parent_id"`
 	Recurrence  *RecurrenceInput `json:"recurrence"`
 }
@@ -67,6 +72,8 @@ type UpdateTaskInput struct {
 	Priority    Optional[string]          `json:"priority"`
 	DueAt       Optional[string]          `json:"due_at"`
 	ListID      Optional[uint64]          `json:"list_id"`
+	ProjectID   Optional[uint64]          `json:"project_id"`   // changing it clears a milestone from the old project
+	MilestoneID Optional[uint64]          `json:"milestone_id"` // implies its project when project_id is omitted
 	Recurrence  Optional[RecurrenceInput] `json:"recurrence"`
 }
 
@@ -88,6 +95,12 @@ func (s TaskService) List(ctx context.Context, userID uint64, in ListTasksInput)
 		c.oneOf("priority", f.Priority, models.TaskPriorities)
 	}
 	f.ListID = parseIDParam(&c, "list_id", in.ListID)
+	f.ProjectID = parseIDParam(&c, "project_id", in.ProjectID)
+	if in.MilestoneID == "none" {
+		f.NoMilestone = true
+	} else {
+		f.MilestoneID = parseIDParam(&c, "milestone_id", in.MilestoneID)
+	}
 	f.ParentID = parseIDParam(&c, "parent_id", in.ParentID)
 	if in.DueFrom != "" {
 		f.DueFrom = c.parseTime("due_from", in.DueFrom)
@@ -131,6 +144,8 @@ func (s TaskService) Create(ctx context.Context, userID uint64, in CreateTaskInp
 		Status:      orDefault(in.Status, models.TaskPending),
 		Priority:    orDefault(in.Priority, "medium"),
 		ListID:      in.ListID,
+		ProjectID:   in.ProjectID,
+		MilestoneID: in.MilestoneID,
 		ParentID:    in.ParentID,
 	}
 	if t.Description != nil {
@@ -156,6 +171,9 @@ func (s TaskService) Create(ctx context.Context, userID uint64, in CreateTaskInp
 			c.fail("recurrence", "subtasks cannot repeat; make the parent task recurring")
 		}
 	} else if err := s.checkListOwnership(ctx, &c, userID, t.ListID); err != nil {
+		return models.Task{}, err
+	}
+	if err := s.resolveProject(ctx, &c, userID, &t, in.ProjectID != nil); err != nil {
 		return models.Task{}, err
 	}
 	checkRecurrenceDates(&c, &t)
@@ -211,6 +229,21 @@ func (s TaskService) Update(ctx context.Context, userID, id uint64, in UpdateTas
 		if t.ParentID != nil && t.ListID != nil {
 			c.fail("list_id", "subtasks use their parent's list")
 		} else if err := s.checkListOwnership(ctx, &c, userID, t.ListID); err != nil {
+			return models.Task{}, err
+		}
+	}
+	if in.ProjectID.Set || in.MilestoneID.Set {
+		previousProject := t.ProjectID
+		if in.ProjectID.Set {
+			t.ProjectID = in.ProjectID.Ptr()
+			if !in.MilestoneID.Set && !sameID(previousProject, t.ProjectID) {
+				t.MilestoneID = nil // the old milestone belongs to the old project
+			}
+		}
+		if in.MilestoneID.Set {
+			t.MilestoneID = in.MilestoneID.Ptr()
+		}
+		if err := s.resolveProject(ctx, &c, userID, &t, in.ProjectID.Set); err != nil {
 			return models.Task{}, err
 		}
 	}
@@ -313,6 +346,8 @@ func createNextOccurrence(ctx context.Context, tx repository.TaskRepository, t m
 	next, err := tx.Create(ctx, models.Task{
 		UserID:             t.UserID,
 		ListID:             t.ListID,
+		ProjectID:          t.ProjectID,
+		MilestoneID:        t.MilestoneID,
 		Title:              t.Title,
 		Description:        t.Description,
 		Status:             models.TaskPending,
@@ -426,6 +461,47 @@ func (s TaskService) checkParent(ctx context.Context, c *checker, userID, parent
 		c.fail("parent_id", "a task can have at most "+strconv.Itoa(maxSubtasks)+" subtasks")
 	}
 	return nil
+}
+
+// resolveProject validates t's project and milestone. A milestone fills in its
+// own project when none was given explicitly; an explicit project must match
+// the milestone's. Subtasks inherit their parent's project and can't set one.
+func (s TaskService) resolveProject(ctx context.Context, c *checker, userID uint64, t *models.Task, projectExplicit bool) error {
+	if t.ParentID != nil {
+		if t.ProjectID != nil || t.MilestoneID != nil {
+			c.fail("project_id", "subtasks use their parent's project")
+		}
+		return nil
+	}
+	if t.MilestoneID != nil {
+		m, err := s.Projects.GetMilestone(ctx, userID, *t.MilestoneID)
+		if errors.Is(err, repository.ErrNotFound) {
+			c.fail("milestone_id", "milestone not found")
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if projectExplicit && !sameID(t.ProjectID, &m.ProjectID) {
+			c.fail("milestone_id", "belongs to a different project")
+			return nil
+		}
+		t.ProjectID = &m.ProjectID
+		return nil
+	}
+	if t.ProjectID != nil {
+		_, err := s.Projects.Get(ctx, userID, *t.ProjectID)
+		if errors.Is(err, repository.ErrNotFound) {
+			c.fail("project_id", "project not found")
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+func sameID(a, b *uint64) bool {
+	return (a == nil && b == nil) || (a != nil && b != nil && *a == *b)
 }
 
 // checkListOwnership rejects list IDs that don't exist or belong to another

@@ -15,16 +15,18 @@ type TaskHandler struct {
 
 func (h TaskHandler) List(c *gin.Context) {
 	tasks, meta, err := h.Tasks.List(c.Request.Context(), middleware.CurrentUser(c).ID, services.ListTasksInput{
-		Status:   c.Query("status"),
-		Priority: c.Query("priority"),
-		ListID:   c.Query("list_id"),
-		ParentID: c.Query("parent_id"),
-		Query:    c.Query("q"),
-		DueFrom:  c.Query("due_from"),
-		DueTo:    c.Query("due_to"),
-		Sort:     c.Query("sort"),
-		Page:     c.Query("page"),
-		PerPage:  c.Query("per_page"),
+		Status:      c.Query("status"),
+		Priority:    c.Query("priority"),
+		ListID:      c.Query("list_id"),
+		ParentID:    c.Query("parent_id"),
+		ProjectID:   c.Query("project_id"),
+		MilestoneID: c.Query("milestone_id"),
+		Query:       c.Query("q"),
+		DueFrom:     c.Query("due_from"),
+		DueTo:       c.Query("due_to"),
+		Sort:        c.Query("sort"),
+		Page:        c.Query("page"),
+		PerPage:     c.Query("per_page"),
 	})
 	if err != nil {
 		respondServiceError(c, err)

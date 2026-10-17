@@ -51,6 +51,22 @@ export function fromDateInputEndOfDay(value: string): string | null {
   return value ? new Date(`${value}T23:59:59`).toISOString() : null;
 }
 
+/** Parses a calendar date "YYYY-MM-DD" as local midnight (not UTC). */
+function parseDate(value: string): Date {
+  const [y, m, d] = value.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+/** "1 Dec 2026" for a "YYYY-MM-DD" calendar date. */
+export function formatDate(value: string): string {
+  return parseDate(value).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** True if the calendar date is before today. */
+export function isPastDate(value: string, now = new Date()): boolean {
+  return parseDate(value).getTime() < startOfDay(now);
+}
+
 function startOfDay(d: Date): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
