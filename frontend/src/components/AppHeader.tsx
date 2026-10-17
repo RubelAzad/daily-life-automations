@@ -6,6 +6,7 @@ import { logout, type User } from "@/lib/api";
 import NotificationBell from "./NotificationBell";
 
 const NAV = [
+  { href: "/today", label: "Today" },
   { href: "/tasks", label: "Tasks" },
   { href: "/calendar", label: "Calendar" },
   { href: "/projects", label: "Projects" },

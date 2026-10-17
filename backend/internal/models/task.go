@@ -34,17 +34,19 @@ type TaskRef struct {
 }
 
 type Task struct {
-	ID          uint64      `json:"id"`
-	UserID      uint64      `json:"-"`
-	ListID      *uint64     `json:"list_id"`
-	ProjectID   *uint64     `json:"project_id"`
-	MilestoneID *uint64     `json:"milestone_id"`
-	ParentID    *uint64     `json:"parent_id"`
-	Title       string      `json:"title"`
-	Description *string     `json:"description"`
-	Status      string      `json:"status"`
-	Priority    string      `json:"priority"`
-	DueAt       *time.Time  `json:"due_at"`
+	ID          uint64     `json:"id"`
+	UserID      uint64     `json:"-"`
+	ListID      *uint64    `json:"list_id"`
+	ProjectID   *uint64    `json:"project_id"`
+	MilestoneID *uint64    `json:"milestone_id"`
+	ParentID    *uint64    `json:"parent_id"`
+	Title       string     `json:"title"`
+	Description *string    `json:"description"`
+	Status      string     `json:"status"`
+	Priority    string     `json:"priority"`
+	DueAt       *time.Time `json:"due_at"`
+	// CarryCount is how many times the task was carried forward unfinished.
+	CarryCount  int         `json:"carry_count"`
 	CompletedAt *time.Time  `json:"completed_at"`
 	Recurrence  *Recurrence `json:"recurrence"`
 	// RecurrenceAnchorAt is the first due date of the series; occurrences are

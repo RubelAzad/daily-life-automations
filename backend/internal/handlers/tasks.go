@@ -127,3 +127,17 @@ func (h TaskHandler) RemoveDependency(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"data": task})
 }
+
+// CarryForward moves unfinished tasks to today or tomorrow.
+func (h TaskHandler) CarryForward(c *gin.Context) {
+	var in services.CarryForwardInput
+	if !bindJSON(c, &in) {
+		return
+	}
+	tasks, err := h.Tasks.CarryForward(c.Request.Context(), middleware.CurrentUser(c).ID, in)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": tasks, "meta": gin.H{"moved": len(tasks)}})
+}

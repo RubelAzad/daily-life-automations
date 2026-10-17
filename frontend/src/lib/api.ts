@@ -119,6 +119,8 @@ export type Task = {
   status: TaskStatus;
   priority: TaskPriority;
   due_at: string | null;
+  /** How many times it was carried forward unfinished. */
+  carry_count: number;
   completed_at: string | null;
   recurrence: Recurrence | null;
   next_task_id: number | null;
@@ -592,4 +594,32 @@ export async function getMe(): Promise<User | null> {
     if (err instanceof ApiError && err.status === 401) return null;
     throw err;
   }
+}
+
+// ---- Today -----------------------------------------------------------------
+
+export type TodaySummary = { overdue: number; due_today: number; completed_today: number; events: number; conflicts: number };
+
+/** The user's current day in their settings time zone. */
+export type Today = {
+  date: string; // "YYYY-MM-DD"
+  timezone: string;
+  starts_at: string;
+  ends_at: string;
+  summary: TodaySummary;
+  overdue: Task[]; // open, due before today, oldest first (at most 100; summary has the total)
+  due_today: Task[];
+  completed_today: Task[];
+  events: EventOccurrence[]; // all-day first
+  reminders: Reminder[]; // still to fire today
+  expiring_notes: Note[]; // expired or expiring within 30 days
+};
+
+export async function getToday() {
+  return (await request<{ data: Today }>("/today")).data;
+}
+
+/** Moves open tasks to today or tomorrow at the same time of day; no ids = every overdue task. */
+export async function carryForward(input: { task_ids?: number[]; to?: "today" | "tomorrow" }) {
+  return request<{ data: Task[]; meta: { moved: number } }>("/tasks/carry-forward", { method: "POST", body: JSON.stringify(input) });
 }

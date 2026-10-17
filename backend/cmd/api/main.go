@@ -47,8 +47,12 @@ func main() {
 	projectHandler := handlers.ProjectHandler{Projects: services.ProjectService{Projects: projects}}
 	events := repository.CalendarEventRepository{DB: db}
 	reminders := repository.ReminderRepository{DB: db}
-	calendarHandler := handlers.CalendarHandler{Calendar: services.CalendarService{Events: events, Reminders: reminders}}
+	calendarService := services.CalendarService{Events: events, Reminders: reminders}
+	calendarHandler := handlers.CalendarHandler{Calendar: calendarService}
 	notes := repository.NoteRepository{DB: db}
+	todayHandler := handlers.TodayHandler{Today: services.TodayService{
+		Tasks: repository.TaskRepository{DB: db}, Calendar: calendarService, Reminders: reminders, Notes: notes,
+	}}
 	noteHandler := handlers.NoteHandler{Notes: services.NoteService{
 		Notes: notes, Files: repository.FileRepository{DB: db}, Projects: projects, Reminders: reminders,
 		Store: storage.LocalStore{Root: cfg.StorageDir}, MaxUploadBytes: cfg.MaxUploadBytes,
@@ -85,8 +89,11 @@ func main() {
 	protected.GET("/settings", settingsHandler.Get)
 	protected.PATCH("/settings", settingsHandler.Update)
 
+	protected.GET("/today", todayHandler.Get)
+
 	protected.GET("/tasks", taskHandler.List)
 	protected.POST("/tasks", taskHandler.Create)
+	protected.POST("/tasks/carry-forward", taskHandler.CarryForward)
 	protected.GET("/tasks/:id", taskHandler.Get)
 	protected.PATCH("/tasks/:id", taskHandler.Update)
 	protected.DELETE("/tasks/:id", taskHandler.Delete)
