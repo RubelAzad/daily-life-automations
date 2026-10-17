@@ -41,19 +41,6 @@ type RunStats struct {
 	Errors    int
 }
 
-// Tick processes due reminders once and logs the outcome.
-func (w ReminderWorker) Tick(ctx context.Context) { w.logPass(w.RunOnce(ctx)) }
-
-func (w ReminderWorker) logPass(stats RunStats, err error) {
-	if err != nil {
-		w.Log.Printf("reminders: pass failed: %v", err)
-		return
-	}
-	if stats != (RunStats{}) {
-		w.Log.Printf("reminders: delivered=%d skipped=%d held=%d errors=%d", stats.Delivered, stats.Skipped, stats.Held, stats.Errors)
-	}
-}
-
 // RunOnce processes every reminder due now, in batches.
 func (w ReminderWorker) RunOnce(ctx context.Context) (RunStats, error) {
 	var stats RunStats

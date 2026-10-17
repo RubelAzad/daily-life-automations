@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import AppHeader, { ErrorBanner } from "@/components/AppHeader";
+import { WorkerSection } from "@/components/WorkerStatus";
 import { ApiError, deviceTimeZone, getSettings, updateSettings, WEEK_START_OPTIONS, type ApprovalMode, type Settings, type WeekStart } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { useRequireUser } from "@/lib/useRequireUser";
@@ -198,7 +199,7 @@ export default function SettingsView() {
                 {fieldError(time)}
               </div>
             ))}
-            <p className="text-xs text-zinc-500">Needs the worker running (see setup). A briefing turned on later than 3 hours after its time starts the next day.</p>
+            <p className="text-xs text-zinc-500">Needs the background worker running (see below). A briefing turned on later than 3 hours after its time starts the next day.</p>
           </section>
 
           <section className={section} aria-labelledby="ai-heading">
@@ -247,6 +248,7 @@ export default function SettingsView() {
           </div>
         </form>
       )}
+      {draft && <WorkerSection className={section} />}
     </div>
   );
 }

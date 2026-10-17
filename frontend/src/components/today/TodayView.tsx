@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import AppHeader, { ErrorBanner } from "@/components/AppHeader";
 import BriefingPanel from "@/components/today/BriefingPanel";
+import { WorkerWarning } from "@/components/WorkerStatus";
 import { carryForward, createTask, deviceTimeZone, getToday, updateTask, type EventOccurrence, type Task, type Today } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { formatDate, formatDue, formatTime, fromDateInputEndOfDay, isPastDate } from "@/lib/format";
@@ -90,6 +91,7 @@ export default function TodayView() {
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6">
       <AppHeader user={user} />
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
+      <WorkerWarning />
 
       {!today ? (
         <p className="text-zinc-500">Loading your day…</p>

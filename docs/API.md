@@ -17,6 +17,15 @@ Base URL: `http://localhost:8080/api/v1`. Request and response bodies are JSON.
 |---|---|---|
 | GET | `/health` | `{"status":"ok","database":"connected"}`, or `503` when the database is down |
 
+## System
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/system/status` | Whether the background worker is running: `{"worker": {running, last_seen_at, jobs: [{kind, every_seconds, running, last_status, last_finished_at, next_run_at}]}}`. Signed-in users only. |
+
+- **Jobs:** the worker's repeating system jobs: `reminders.deliver`, `briefings.run` and `search.index` (every `WORKER_INTERVAL_SECONDS`, default 30 s) and `scheduler.prune` (daily). `last_status` is `succeeded` or `failed`; a failed job is retried with backoff. Error details stay in the worker's log and are never returned.
+- **`running`:** true if a job is running now, or one started or finished within twice the shortest interval plus a minute (2 minutes with the defaults). The app shows a warning on Today and in Settings when it's false, because reminders and scheduled briefings aren't being delivered.
+
 ## Auth
 
 | Method | Path | Body | Result |

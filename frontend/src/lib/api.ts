@@ -799,3 +799,22 @@ export type SearchResult = {
 export async function searchDocuments(q: string, limit = 20) {
   return (await request<{ data: SearchResult[] }>(`/search?${new URLSearchParams({ q, limit: String(limit) })}`)).data;
 }
+
+// ---- System ----------------------------------------------------------------
+
+/** One of the worker's repeating jobs (reminders, briefings, search indexing, cleanup). */
+export type SystemJob = {
+  kind: string;
+  every_seconds: number;
+  running: boolean;
+  last_status: "succeeded" | "failed" | null;
+  last_finished_at: string | null;
+  next_run_at: string | null;
+};
+
+export type WorkerStatus = { running: boolean; last_seen_at: string | null; jobs: SystemJob[] };
+
+/** Whether the background worker is processing jobs. */
+export async function getSystemStatus() {
+  return (await request<{ data: { worker: WorkerStatus } }>("/system/status")).data.worker;
+}
