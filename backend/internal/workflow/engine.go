@@ -278,7 +278,7 @@ func (e Engine) resume(ctx context.Context, a models.Automation, run models.Work
 	run.Steps, run.Error = steps, nil
 
 	ctx = events.WithCause(ctx, events.Cause{AutomationID: a.ID, Depth: run.Depth})
-	origin := ai.Origin{Source: "automation", AutomationID: &a.ID}
+	origin := ai.Origin{Source: "automation", AutomationID: &a.ID, RunID: &run.ID}
 	var failure *string
 	retryable, waiting := false, false
 	for i := range run.Steps {
@@ -354,8 +354,8 @@ func (e Engine) finish(ctx context.Context, a models.Automation, run models.Work
 	switch status {
 	case models.RunWaitingApproval:
 		n = &models.Notification{
-			Title: fmt.Sprintf("“%s” is waiting for your approval", a.Name), Body: strPtr("Review what it wants to do on the AI activity page."),
-			Link: strPtr("/ai/activity"), IdempotencyKey: fmt.Sprintf("workflow-run:%d:approval:%d", run.ID, run.Attempt),
+			Title: fmt.Sprintf("“%s” is waiting for your approval", a.Name), Body: strPtr("Review what it wants to do in Approvals."),
+			Link: strPtr("/approvals"), IdempotencyKey: fmt.Sprintf("workflow-run:%d:approval:%d", run.ID, run.Attempt),
 		}
 	case models.RunFailed:
 		n = &models.Notification{
@@ -457,11 +457,56 @@ func (e Engine) failOrphan(ctx context.Context, run models.WorkflowRun, msg stri
 }
 
 // Refresh brings steps waiting for approval up to date with the user's
-// decision, and the run's status with them. Runs are read through it.
+// decision, and the run's status with them. Runs are read through it, and
+// the approvals inbox calls it (through RefreshRun) after each decision.
 func (e Engine) Refresh(ctx context.Context, run models.WorkflowRun) (models.WorkflowRun, error) {
 	if run.Status != models.RunWaitingApproval {
 		return run, nil
 	}
+	// Most reads find nothing decided: check before taking the lock.
+	if _, changed, err := e.applyDecisions(ctx, run); err != nil || !changed {
+		return run, err
+	}
+	err := repository.InTx(ctx, e.DB, func(db repository.DBTX) error {
+		locked, err := repository.WorkflowRunRepository{DB: db}.GetForUpdate(ctx, run.UserID, run.ID)
+		if err != nil {
+			return err
+		}
+		if locked.Status != models.RunWaitingApproval {
+			run = locked
+			return nil
+		}
+		updated, changed, err := e.applyDecisions(ctx, locked)
+		if err != nil || !changed {
+			run = locked
+			return err
+		}
+		run = updated
+		if err := (repository.WorkflowRunRepository{DB: db}).Save(ctx, run); err != nil {
+			return err
+		}
+		if run.AutomationID != nil && run.Status != models.RunWaitingApproval {
+			return repository.AutomationRepository{DB: db}.SetStatusIfLatest(ctx, *run.AutomationID, run.ID, run.Status, run.Error)
+		}
+		return nil
+	})
+	return run, err
+}
+
+// RefreshRun refreshes one of the user's runs by ID.
+func (e Engine) RefreshRun(ctx context.Context, userID, runID uint64) (models.WorkflowRun, error) {
+	run, err := repository.WorkflowRunRepository{DB: e.DB}.Get(ctx, userID, runID)
+	if err != nil {
+		return run, err
+	}
+	return e.Refresh(ctx, run)
+}
+
+// applyDecisions copies the outcome of decided approvals into the run's
+// steps. Once none is left waiting, the run succeeds, or fails if a step
+// was declined, expired or failed.
+func (e Engine) applyDecisions(ctx context.Context, run models.WorkflowRun) (models.WorkflowRun, bool, error) {
+	run.Steps = append([]models.RunStep(nil), run.Steps...)
 	pending, changed := false, false
 	var failure *string
 	for i := range run.Steps {
@@ -471,7 +516,7 @@ func (e Engine) Refresh(ctx context.Context, run models.WorkflowRun) (models.Wor
 		}
 		act, err := e.Executor.Actions.Get(ctx, run.UserID, *step.ActionID)
 		if err != nil {
-			return run, err
+			return run, false, err
 		}
 		switch act.Status {
 		case models.AIStatusPendingApproval, models.AIStatusRunning:
@@ -485,16 +530,13 @@ func (e Engine) Refresh(ctx context.Context, run models.WorkflowRun) (models.Wor
 		}
 		step.Status, step.Error, changed = act.Status, deref(act.Error), true
 	}
-	if !changed {
-		return run, nil
-	}
-	if !pending {
+	if changed && !pending {
 		run.Status, run.Error = models.RunSucceeded, nil
 		if failure != nil {
 			run.Status, run.Error = models.RunFailed, failure
 		}
 	}
-	return run, repository.WorkflowRunRepository{DB: e.DB}.Save(ctx, run)
+	return run, changed, nil
 }
 
 func decision(a models.AIAction) string {

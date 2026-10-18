@@ -34,8 +34,8 @@ All 20 modules from [DAILY_LIFE_MODULES.md](DAILY_LIFE_MODULES.md), split into s
 | 3.1 | Durable scheduler (`scheduled_jobs`), idempotency keys | 18 | ✅ Done |
 | 3.2 | Automations: triggers, conditions, actions; internal event bus | 18 | ✅ Done |
 | 3.3 | Workflow runs: history, retries, error handling | 18 | ✅ Done |
-| 3.4 | Approvals inbox (approve / reject) | 18, 20 | ⬜ Next |
-| 3.5 | Built-in workflows: A (daily planning) and D (missed task recovery) | 1, 2, 18 | ⬜ |
+| 3.4 | Approvals inbox (approve / reject) | 18, 20 | ✅ Done |
+| 3.5 | Built-in workflows: A (daily planning) and D (missed task recovery) | 1, 2, 18 | ⬜ Next |
 
 ## Phase 4 — Everyday life modules
 

@@ -143,6 +143,16 @@ func (r AutomationRepository) RecordRun(ctx context.Context, id uint64, at time.
 	return err
 }
 
+// SetStatusIfLatest updates an automation's last status when runID is its
+// latest run, e.g. once the steps it was waiting on are approved.
+func (r AutomationRepository) SetStatusIfLatest(ctx context.Context, id, runID uint64, status string, errMsg *string) error {
+	_, err := r.DB.ExecContext(ctx,
+		`UPDATE automations SET last_status = ?, last_error = ?, updated_at = updated_at
+		  WHERE id = ? AND NOT EXISTS (SELECT 1 FROM workflow_runs WHERE automation_id = ? AND id > ?)`,
+		status, errMsg, id, id, runID)
+	return err
+}
+
 func (r AutomationRepository) query(ctx context.Context, q string, args ...any) ([]models.Automation, error) {
 	rows, err := r.DB.QueryContext(ctx, q, args...)
 	if err != nil {

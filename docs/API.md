@@ -58,10 +58,10 @@ The model can only use the tools in the allowlist below, with input decoded stri
 |---|---|---|
 | GET | `/ai/status` | `{enabled, provider, model, reason, tools: [{name, description, risk}]}`. `reason` explains why AI is off. The API key is never returned. |
 | POST | `/ai/ping` | Tiny model call to check the key and connection: `{reply, model, duration_ms, input_tokens, output_tokens, action_id}`. `503` when AI is off, `429` within 10 s of the last ping, `502` with the provider's message if the call fails (e.g. invalid key). |
-| GET | `/ai/actions` | The audit log, newest first. Query: `status` (comma-separated), `kind` (`tool`, `llm_call`), `conversation_id`, `automation_id`, `page`, `per_page` (≤ 100). Entries have `source` (`chat`, `automation`, …) and `automation_id`. |
+| GET | `/ai/actions` | The audit log, newest first. Query: `status` (comma-separated), `kind` (`tool`, `llm_call`), `conversation_id`, `automation_id`, `page`, `per_page` (≤ 100). Entries have `source` (`chat`, `automation`, …), `automation_id` and `workflow_run_id`. |
 | GET | `/ai/actions/:id` | One entry |
-| POST | `/ai/actions/:id/approve` | Runs a pending action once. Returns the entry with its final `status` (`succeeded`/`failed`), `output` and `error`. `409` if it isn't pending or has expired. |
-| POST | `/ai/actions/:id/reject` | Discards a pending action. `409` if it isn't pending. |
+| POST | `/ai/actions/:id/approve` | Same as [`/approvals/:id/approve`](#approvals). |
+| POST | `/ai/actions/:id/reject` | Same as [`/approvals/:id/reject`](#approvals). |
 
 ### Chat
 
@@ -194,7 +194,7 @@ Every run is recorded (a run whose conditions don't hold isn't: nothing happened
 - **Automatic:** a step that fails unexpectedly (an internal error) is retried after 1 minute, then 5 (3 attempts in all), as `retrying`. Failures caused by the input (invalid input, a task that doesn't exist) aren't retried: retrying wouldn't help.
 - **Resumes, doesn't repeat:** a retry continues from the step that failed. Steps that already succeeded, or are waiting for approval, aren't run again.
 - **When a run fails for good:** the user gets a notification linking to the run (`/automations?run=<id>`), and `workflow.failed` fires for other automations.
-- **Approvals:** steps waiting for approval show the user's decision when the run is read: approved steps become `succeeded`; a declined or expired step fails the run.
+- **Approvals:** deciding on a step in the [approvals inbox](#approvals) updates its run at once: approved steps become `succeeded`; a declined or expired step fails the run. The automation's `last_status` follows if it is its latest run.
 - **Crashes:** a worker that dies mid-run leaves the run `running`; its job is picked up again and resumes the same run, skipping actions already recorded.
 
 **Safety:**
@@ -202,6 +202,24 @@ Every run is recorded (a run whose conditions don't hold isn't: nothing happened
 - **Rate limit:** an automation that would take more than 60 actions in an hour is paused for that run (`failed`, with the reason).
 - **Exactly once:** events are queued in the same transaction as the change, so they exist only if it committed; each event runs each automation once (idempotency keys), and a retried run skips the actions it already took.
 - **Isolation:** another user's automation is a `404`.
+
+## Approvals
+
+Actions from the assistant and from automations that wait for the user's decision (see `ai_approval_mode` in [Settings](#settings)). Each item is an [audit log](#ai-assistant) entry plus where it came from: `automation` (`{id, name}`, `null` if deleted), `run` (`{id, trigger_summary, status}`) and `conversation` (`{id, name}`, the chat's title).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/approvals` | Waiting requests, the soonest to expire first. Query: `page`, `per_page` (≤ 100). Each has `expires_at`. |
+| GET | `/approvals/count` | `{pending}`, for the menu badge |
+| GET | `/approvals/history` | Approved, rejected and expired requests, the latest decision first (`decided_at`). Query: `page`, `per_page`. |
+| POST | `/approvals/:id/approve` | Runs the action once and returns it with its final `status` (`succeeded`/`failed`), `output` and `error`. `409` if it isn't pending or has expired. |
+| POST | `/approvals/:id/reject` | Discards the action without running it. `409` if it isn't pending. |
+| POST | `/approvals/decide` | `{ids: [..], decision: "approve" \| "reject"}`, 1–50 IDs, decided in order. Returns `[{id, ok, error, action}]`: an action that is already decided, expired or not found has `ok: false` and doesn't stop the others. |
+
+- **Expiry:** a request expires 24 h after it was proposed. It leaves the inbox at once; the worker then marks it `expired` and fails the run waiting on it, with a notification linking to the run.
+- **Acts as the automation:** an approved action from an automation counts as that automation's change, so it doesn't trigger the same automation again, and chain limits apply.
+- **Notification:** a run that starts waiting sends one notification linking to `/approvals`.
+- **Isolation:** another user's request is a `404` (or `not found` in a bulk result).
 
 ## Settings
 

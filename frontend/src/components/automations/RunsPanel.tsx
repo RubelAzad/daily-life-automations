@@ -171,7 +171,7 @@ export default function RunsPanel({ automation, onClearAutomation, openRunId, ve
                           {s.error && s.status !== "succeeded" && <span className="text-red-600 dark:text-red-400">{s.error}</span>}
                           {s.attempt > 1 && <span className="text-zinc-400">(attempt {s.attempt})</span>}
                           {s.status === "pending_approval" && (
-                            <Link href="/ai/activity" className="underline">
+                            <Link href="/approvals" className="underline">
                               review
                             </Link>
                           )}

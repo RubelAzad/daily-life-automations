@@ -209,8 +209,11 @@ export default function ChatView() {
             ))}
             {chats?.length === 0 && <p className="px-2 py-1 text-xs text-zinc-500">No chats yet.</p>}
           </nav>
+          <Link href="/approvals" className="px-2 text-xs text-zinc-500 underline">
+            Approvals
+          </Link>
           <Link href="/ai/activity" className="px-2 text-xs text-zinc-500 underline">
-            Activity log &amp; approvals
+            Activity log
           </Link>
         </aside>
 

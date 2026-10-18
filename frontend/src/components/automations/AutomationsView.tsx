@@ -140,7 +140,11 @@ export default function AutomationsView() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Automations</h1>
           <p className="text-sm text-zinc-500">
-            When something happens, or on a schedule, LifeOS does it for you. Every action is listed on the{" "}
+            When something happens, or on a schedule, LifeOS does it for you. Actions that need your OK wait in{" "}
+            <Link href="/approvals" className="underline">
+              Approvals
+            </Link>
+            ; every action is listed on the{" "}
             <Link href="/ai/activity" className="underline">
               AI activity page
             </Link>

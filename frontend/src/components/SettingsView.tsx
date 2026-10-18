@@ -219,7 +219,11 @@ export default function SettingsView() {
             </div>
             {fieldError("ai_approval_mode")}
             <p className="text-xs text-zinc-500">
-              Sending messages, spending money, deleting data and making bookings always need your approval. Review requests and everything the assistant did on the{" "}
+              Sending messages, spending money, deleting data and making bookings always need your approval. Requests wait in{" "}
+              <Link href="/approvals" className="underline">
+                Approvals
+              </Link>{" "}
+              for 24 hours; everything the assistant did is on the{" "}
               <Link href="/ai/activity" className="underline">
                 AI activity page
               </Link>

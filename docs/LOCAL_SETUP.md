@@ -44,7 +44,7 @@ ANTHROPIC_API_KEY=sk-ant-...      # from https://console.anthropic.com/ — neve
 AI_MODEL=claude-sonnet-5-5        # optional
 ```
 
-Restart the API. The startup log says `AI enabled` or `AI disabled`. **AI** in the menu opens the chat; *Activity log & approvals* (`/ai/activity`) has a *Test connection* button. Each chat message and test is a real, paid call (usually a few cents or less).
+Restart the API. The startup log says `AI enabled` or `AI disabled`. **AI** in the menu opens the chat; the *Activity log* (`/ai/activity`) has a *Test connection* button, and changes waiting for your OK are under **Approvals**. Each chat message and test is a real, paid call (usually a few cents or less).
 
 For offline development, `AI_PROVIDER=fake` uses a stand-in that makes no network calls (only allowed with `APP_ENV=local`). It follows scripts typed in the chat:
 
@@ -76,7 +76,7 @@ go run ./cmd/worker -once      # run every system job and anything else that is 
 
 It's safe to run more than one worker, or to restart one at any time: each system job runs in one worker at a time, reminders are also claimed with a row lock, and each notification has a unique key, so nothing is delivered twice.
 
-Automations run here: their schedules, the events that trigger them (`task.created`, …, queued by the API in the same transaction as the change) and the overdue-task check. Without a worker they don't run, except **Run now**, which runs in the API.
+Automations run here: their schedules, the events that trigger them (`task.created`, …, queued by the API in the same transaction as the change) and the overdue-task check. The worker also expires approval requests left undecided for 24 hours (**Approvals** in the menu), failing the runs that waited on them. Without a worker they don't run, except **Run now**, which runs in the API.
 
 Scheduled AI briefings are only made for users who turned them on in Settings, and only when AI is configured. Search indexing extracts text from uploads the API didn't get to (and from files uploaded before search existed) and re-indexes changed notes.
 

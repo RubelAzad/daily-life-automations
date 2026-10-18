@@ -29,6 +29,8 @@ type AIAction struct {
 	ConversationID *uint64 `json:"conversation_id"`
 	// AutomationID is the automation that took the action, if any.
 	AutomationID *uint64 `json:"automation_id"`
+	// WorkflowRunID is the automation run that took the action, if any.
+	WorkflowRunID *uint64 `json:"workflow_run_id"`
 	// IdempotencyKey lets a retried automation run skip actions it took.
 	IdempotencyKey *string `json:"-"`
 	Tool           *string `json:"tool"`
