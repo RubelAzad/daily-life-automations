@@ -74,35 +74,60 @@ func (r JobRepository) ClaimNext(ctx context.Context, kinds []string, worker str
 		args = append(args, k)
 	}
 	args = append(args, now.UTC(), now.UTC())
-	err = InTx(ctx, r.DB, func(tx DBTX) error {
-		// SKIP LOCKED: workers claiming at the same time take different jobs
-		// instead of waiting for each other.
-		row := tx.QueryRowContext(ctx,
-			`SELECT `+jobColumns+` FROM scheduled_jobs
+	// READ COMMITTED: claiming must not gap-lock the table, or it deadlocks
+	// with transactions adding jobs (a task being created queues its event).
+	err = retry(func() error {
+		job, ok = models.ScheduledJob{}, false
+		return inTxReadCommitted(ctx, r.DB, func(tx DBTX) error {
+			// SKIP LOCKED: workers claiming at the same time take different jobs
+			// instead of waiting for each other.
+			row := tx.QueryRowContext(ctx,
+				`SELECT `+jobColumns+` FROM scheduled_jobs
 			  WHERE kind IN (?`+strings.Repeat(", ?", len(kinds)-1)+`)
 			    AND ((status = 'pending' AND run_at <= ?) OR (status = 'running' AND locked_until < ?))
 			  ORDER BY run_at, id
 			  LIMIT 1
 			  FOR UPDATE SKIP LOCKED`, args...)
-		j, err := scanJob(row)
-		if errors.Is(err, sql.ErrNoRows) {
+			j, err := scanJob(row)
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE scheduled_jobs SET status = 'running', attempts = attempts + 1, locked_by = ?, locked_until = ?, last_started_at = ? WHERE id = ?`,
+				worker, leaseUntil.UTC(), now.UTC(), j.ID); err != nil {
+				return err
+			}
+			j.Status, j.Attempts, j.LockedBy, j.LastStartedAt = models.JobRunning, j.Attempts+1, &worker, &now
+			lu := leaseUntil.UTC()
+			j.LockedUntil = &lu
+			job, ok = j, true
 			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE scheduled_jobs SET status = 'running', attempts = attempts + 1, locked_by = ?, locked_until = ?, last_started_at = ? WHERE id = ?`,
-			worker, leaseUntil.UTC(), now.UTC(), j.ID); err != nil {
-			return err
-		}
-		j.Status, j.Attempts, j.LockedBy, j.LastStartedAt = models.JobRunning, j.Attempts+1, &worker, &now
-		lu := leaseUntil.UTC()
-		j.LockedUntil = &lu
-		job, ok = j, true
-		return nil
+		})
 	})
 	return job, ok, err
+}
+
+// CountDue counts due jobs of the kinds without locking anything. A claim
+// can find nothing while due jobs exist, if another claimer is looking at
+// them at that moment (SKIP LOCKED skips them); this tells the two apart.
+func (r JobRepository) CountDue(ctx context.Context, kinds []string, now time.Time) (int, error) {
+	if len(kinds) == 0 {
+		return 0, nil
+	}
+	args := make([]any, 0, len(kinds)+2)
+	for _, k := range kinds {
+		args = append(args, k)
+	}
+	args = append(args, now.UTC(), now.UTC())
+	var n int
+	err := r.DB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM scheduled_jobs
+		  WHERE kind IN (?`+strings.Repeat(", ?", len(kinds)-1)+`)
+		    AND ((status = 'pending' AND run_at <= ?) OR (status = 'running' AND locked_until < ?))`, args...).Scan(&n)
+	return n, err
 }
 
 // Renew extends a lease the worker still holds. ok is false if it lost it.
@@ -129,7 +154,15 @@ type JobOutcome struct {
 // Finish records an attempt and releases the lease. Only the worker holding
 // the lease can do this, so a worker whose lease ran out (and whose job was
 // taken over) can't overwrite the newer attempt. ok is false in that case.
-func (r JobRepository) Finish(ctx context.Context, id uint64, worker string, o JobOutcome) (bool, error) {
+func (r JobRepository) Finish(ctx context.Context, id uint64, worker string, o JobOutcome) (ok bool, err error) {
+	err = retry(func() error {
+		ok, err = r.finish(ctx, id, worker, o)
+		return err
+	})
+	return ok, err
+}
+
+func (r JobRepository) finish(ctx context.Context, id uint64, worker string, o JobOutcome) (bool, error) {
 	res, err := r.DB.ExecContext(ctx,
 		`UPDATE scheduled_jobs
 		    SET status = ?, run_at = ?, attempts = ?, last_status = NULLIF(?, ''), last_error = ?, last_finished_at = ?,

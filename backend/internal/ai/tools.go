@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+	"slices"
+	"strings"
 
 	"lifeos-ai/backend/internal/models"
 )
@@ -127,6 +130,82 @@ func (r *Registry) Get(name string) (Tool, bool) {
 }
 
 func (r *Registry) All() []Tool { return append([]Tool(nil), r.tools...) }
+
+// Check decodes input for the named tool as a call would (strictly) and
+// returns the action's summary, without running it. Errors are safe to show.
+func (r *Registry) Check(ctx context.Context, userID uint64, name string, input json.RawMessage) (string, error) {
+	t, ok := r.Get(name)
+	if !ok {
+		return "", &InputError{Message: "unknown action " + name}
+	}
+	if err := checkSchema(t.Schema, input); err != nil {
+		return "", err
+	}
+	prep, err := t.prepare(ctx, userID, input)
+	if err != nil {
+		return "", err
+	}
+	return prep.summary, nil
+}
+
+// checkSchema applies the simple JSON Schema rules the tools use: required
+// properties, enums, string lengths and patterns, integer bounds.
+func checkSchema(schema, input json.RawMessage) error {
+	var sc struct {
+		Required   []string `json:"required"`
+		Properties map[string]struct {
+			Type      string   `json:"type"`
+			Enum      []string `json:"enum"`
+			MinLength *int     `json:"minLength"`
+			MaxLength *int     `json:"maxLength"`
+			Pattern   string   `json:"pattern"`
+			Minimum   *float64 `json:"minimum"`
+			Maximum   *float64 `json:"maximum"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(schema, &sc); err != nil {
+		return err
+	}
+	var in map[string]any
+	if err := json.Unmarshal(input, &in); err != nil {
+		return &InputError{Message: "invalid input: expected a JSON object"}
+	}
+	for _, k := range sc.Required {
+		if _, ok := in[k]; !ok {
+			return &InputError{Message: k + " is required"}
+		}
+	}
+	for k, v := range in {
+		p, ok := sc.Properties[k]
+		if !ok {
+			continue // decodeStrict rejects unknown fields
+		}
+		switch x := v.(type) {
+		case string:
+			n := len([]rune(x))
+			switch {
+			case p.MinLength != nil && n < *p.MinLength:
+				return &InputError{Message: fmt.Sprintf("%s must be at least %d characters", k, *p.MinLength)}
+			case p.MaxLength != nil && n > *p.MaxLength:
+				return &InputError{Message: fmt.Sprintf("%s must be at most %d characters", k, *p.MaxLength)}
+			case len(p.Enum) > 0 && !slices.Contains(p.Enum, x):
+				return &InputError{Message: fmt.Sprintf("%s must be one of %s", k, strings.Join(p.Enum, ", "))}
+			case p.Pattern != "" && !regexp.MustCompile(p.Pattern).MatchString(x):
+				return &InputError{Message: k + " has the wrong format"}
+			}
+		case float64:
+			switch {
+			case p.Type == "integer" && x != float64(int64(x)):
+				return &InputError{Message: k + " must be a whole number"}
+			case p.Minimum != nil && x < *p.Minimum:
+				return &InputError{Message: fmt.Sprintf("%s must be at least %g", k, *p.Minimum)}
+			case p.Maximum != nil && x > *p.Maximum:
+				return &InputError{Message: fmt.Sprintf("%s must be at most %g", k, *p.Maximum)}
+			}
+		}
+	}
+	return nil
+}
 
 // Specs describes the tools to the model.
 func (r *Registry) Specs() []ToolSpec {

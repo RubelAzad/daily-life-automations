@@ -59,7 +59,7 @@ Executor tests that use the real database run separately: `go test -tags integra
 
 ## Worker (background jobs)
 
-The worker is a separate process that runs background jobs: it turns due reminders into notifications, writes scheduled AI briefings and keeps the search index current. Without it, reminders are saved but never delivered; Today and Settings show a warning when it isn't running.
+The worker is a separate process that runs background jobs: it turns due reminders into notifications, writes scheduled AI briefings, runs automations (Automations page) and keeps the search index current. Without it, reminders are saved but never delivered; Today and Settings show a warning when it isn't running.
 
 ```powershell
 cd backend
@@ -72,9 +72,11 @@ go run ./cmd/worker -once      # run every system job and anything else that is 
 - Each job is claimed with `FOR UPDATE SKIP LOCKED` and a 2-minute lease that is renewed while it runs. If a worker dies mid-job, another worker (or the next start) takes the job over once the lease runs out.
 - A failed attempt is retried after 30 s, 1 min, 2 min, … (up to an hour), at most 5 times for one-off jobs. Repeating jobs give up on a run after 3 attempts and wait for the next one.
 - Adding a job with an idempotency key that already exists does nothing, so the same work is never scheduled twice. Jobs can be added in the same transaction as the change that needs them.
-- Finished one-off jobs are deleted after 30 days (failed ones after 90).
+- Finished one-off jobs are deleted after 30 days (failed ones after 90), and automation run history after 90 days.
 
 It's safe to run more than one worker, or to restart one at any time: each system job runs in one worker at a time, reminders are also claimed with a row lock, and each notification has a unique key, so nothing is delivered twice.
+
+Automations run here: their schedules, the events that trigger them (`task.created`, …, queued by the API in the same transaction as the change) and the overdue-task check. Without a worker they don't run, except **Run now**, which runs in the API.
 
 Scheduled AI briefings are only made for users who turned them on in Settings, and only when AI is configured. Search indexing extracts text from uploads the API didn't get to (and from files uploaded before search existed) and re-indexes changed notes.
 
@@ -86,7 +88,7 @@ The worker respects each user's quiet hours (Settings page): reminders due in th
 reminders: delivered=N skipped=N held=N errors=N
 briefings: generated=N failed=N
 search: indexed files=N notes=N
-scheduler: pruned N finished jobs
+scheduler: pruned N finished jobs and N automation runs
 jobs: succeeded=N retrying=N failed=N
 ```
 

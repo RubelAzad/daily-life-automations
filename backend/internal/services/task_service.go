@@ -3,10 +3,12 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
+	"lifeos-ai/backend/internal/events"
 	"lifeos-ai/backend/internal/models"
 	"lifeos-ai/backend/internal/repository"
 )
@@ -21,6 +23,21 @@ type TaskService struct {
 	Tasks    repository.TaskRepository
 	Lists    repository.TaskListRepository
 	Projects repository.ProjectRepository
+	// Events publishes task.created and task.completed; nil turns them off.
+	Events EventPublisher
+}
+
+// EventPublisher queues an automation event on db, the transaction making
+// the change, so the event exists exactly when the change does.
+type EventPublisher interface {
+	Publish(ctx context.Context, db repository.DBTX, ev events.Event) error
+}
+
+func publish(ctx context.Context, p EventPublisher, db repository.DBTX, ev events.Event) error {
+	if p == nil {
+		return nil
+	}
+	return p.Publish(ctx, db, ev)
 }
 
 // ListTasksInput holds raw query-string values; the service validates them.
@@ -186,7 +203,17 @@ func (s TaskService) Create(ctx context.Context, userID uint64, in CreateTaskInp
 
 	t.RecurrenceAnchorAt = recurrenceAnchor(t)
 	setCompletedAt(&t, "")
-	return s.Tasks.Create(ctx, t)
+	var created models.Task
+	err := repository.InTx(ctx, s.Tasks.DB, func(db repository.DBTX) error {
+		var err error
+		if created, err = (repository.TaskRepository{DB: db}).Create(ctx, t); err != nil {
+			return err
+		}
+		return publish(ctx, s.Events, db, events.Event{
+			Type: models.TriggerTaskCreated, UserID: userID, Key: fmt.Sprintf("task.created:%d", created.ID), Data: events.TaskData(ctx, db, created),
+		})
+	})
+	return created, err
 }
 
 // Update applies the patch. Completing a recurring task also creates its next
@@ -288,7 +315,15 @@ func (s TaskService) Update(ctx context.Context, userID, id uint64, in UpdateTas
 			return err
 		}
 		if in.DueAt.Set {
-			return rescheduleTaskReminders(ctx, reminders, updated, now)
+			if err := rescheduleTaskReminders(ctx, reminders, updated, now); err != nil {
+				return err
+			}
+		}
+		if completing {
+			return publish(ctx, s.Events, db, events.Event{
+				Type: models.TriggerTaskCompleted, UserID: userID, Key: fmt.Sprintf("task.completed:%d:%d", updated.ID, now.UnixMilli()),
+				Data: events.TaskData(ctx, db, updated),
+			})
 		}
 		return nil
 	})

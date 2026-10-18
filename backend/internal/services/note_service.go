@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"lifeos-ai/backend/internal/events"
 	"lifeos-ai/backend/internal/models"
 	"lifeos-ai/backend/internal/repository"
 	"lifeos-ai/backend/internal/storage"
@@ -35,6 +37,8 @@ type NoteService struct {
 	MaxUploadBytes int64
 	// Index keeps the search index current; nil turns indexing off.
 	Index NoteIndexer
+	// Events publishes note.created; nil turns it off.
+	Events EventPublisher
 }
 
 // NoteIndexer is the part of SearchService that notes need.
@@ -205,7 +209,19 @@ func (s NoteService) Create(ctx context.Context, userID uint64, in CreateNoteInp
 		if id, err = notes.Create(ctx, n); err != nil {
 			return err
 		}
-		return notes.SetTags(ctx, userID, id, tags)
+		if err := notes.SetTags(ctx, userID, id, tags); err != nil {
+			return err
+		}
+		if s.Events == nil {
+			return nil
+		}
+		created, err := notes.Get(ctx, userID, id)
+		if err != nil {
+			return err
+		}
+		return s.Events.Publish(ctx, db, events.Event{
+			Type: models.TriggerNoteCreated, UserID: userID, Key: fmt.Sprintf("note.created:%d", id), Data: events.NoteData(created),
+		})
 	})
 	if err != nil {
 		return models.Note{}, err

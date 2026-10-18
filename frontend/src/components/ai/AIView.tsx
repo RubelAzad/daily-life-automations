@@ -179,6 +179,11 @@ export default function AIView() {
                 <div className="flex flex-wrap items-center gap-2">
                   {a.risk && <RiskBadge risk={a.risk} />}
                   <span className="text-sm font-medium wrap-break-word">{a.summary ?? a.tool}</span>
+                  {a.automation_id && (
+                    <Link href="/automations" className="text-xs text-zinc-500 underline">
+                      from an automation
+                    </Link>
+                  )}
                 </div>
                 <Details action={a} />
                 <div className="flex flex-wrap items-center gap-2">
@@ -245,6 +250,7 @@ export default function AIView() {
                 </div>
                 <div className="flex flex-wrap gap-x-3 text-xs text-zinc-500">
                   <span>{timeAgo(a.created_at)}</span>
+                  {a.automation_id && <span>automation</span>}
                   {a.model && <span>{a.model}</span>}
                   {a.input_tokens !== null && <span>{(a.input_tokens ?? 0) + (a.output_tokens ?? 0)} tokens</span>}
                   {a.duration_ms !== null && <span>{a.duration_ms} ms</span>}

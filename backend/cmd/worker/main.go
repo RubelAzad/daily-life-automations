@@ -1,6 +1,6 @@
 // Command worker runs background jobs separately from the API, from the
 // durable scheduler (scheduled_jobs): reminder delivery, scheduled AI
-// briefings, search indexing and any other due job. Run with -once to run
+// briefings, search indexing, automations and any other due job. Run with -once to run
 // the system jobs and whatever else is due, then exit.
 package main
 
@@ -18,10 +18,12 @@ import (
 	"lifeos-ai/backend/internal/automation"
 	"lifeos-ai/backend/internal/config"
 	"lifeos-ai/backend/internal/database"
+	"lifeos-ai/backend/internal/events"
 	"lifeos-ai/backend/internal/repository"
 	"lifeos-ai/backend/internal/scheduler"
 	"lifeos-ai/backend/internal/services"
 	"lifeos-ai/backend/internal/storage"
+	"lifeos-ai/backend/internal/workflow"
 )
 
 func main() {
@@ -41,14 +43,27 @@ func main() {
 	logger := log.New(os.Stdout, "worker ", log.LstdFlags)
 	reminders := automation.ReminderWorker{DB: db, Log: logger}
 
-	// Scheduled briefings use the same services as the API.
+	// Briefings and automations use the same services as the API. Changes
+	// that automations make publish events too, so automations can chain.
+	bus := events.Bus{}
 	tasks := repository.TaskRepository{DB: db}
-	events, reminderRepo, notes := repository.CalendarEventRepository{DB: db}, repository.ReminderRepository{DB: db}, repository.NoteRepository{DB: db}
-	calendar := services.CalendarService{Events: events, Reminders: reminderRepo}
+	calEvents, reminderRepo, notes := repository.CalendarEventRepository{DB: db}, repository.ReminderRepository{DB: db}, repository.NoteRepository{DB: db}
+	calendar := services.CalendarService{Events: calEvents, Reminders: reminderRepo}
+	taskService := services.TaskService{Tasks: tasks, Lists: repository.TaskListRepository{DB: db}, Projects: repository.ProjectRepository{DB: db}, Events: bus}
+	searchService := services.SearchService{
+		Search: repository.SearchRepository{DB: db}, Notes: notes, Files: repository.FileRepository{DB: db},
+		Store: storage.LocalStore{Root: cfg.StorageDir}, Log: logger,
+	}
 	deps := ai.Deps{
-		Tasks:    services.TaskService{Tasks: tasks, Lists: repository.TaskListRepository{DB: db}, Projects: repository.ProjectRepository{DB: db}},
+		Tasks:    taskService,
 		Calendar: calendar,
 		Today:    services.TodayService{Tasks: tasks, Calendar: calendar, Reminders: reminderRepo, Notes: notes},
+		Notes: services.NoteService{
+			Notes: notes, Files: repository.FileRepository{DB: db}, Projects: repository.ProjectRepository{DB: db}, Reminders: reminderRepo,
+			Index: searchService, Events: bus,
+		},
+		Reminders:     services.ReminderService{Reminders: reminderRepo, Tasks: tasks, Events: calEvents, Notes: notes},
+		Notifications: repository.NotificationRepository{DB: db},
 	}
 	aiService := ai.NewService(
 		ai.NewClient(cfg.AI.Provider, cfg.AI.APIKey, cfg.AI.Model, cfg.AI.BaseURL, cfg.AI.MaxTokens, cfg.AI.Timeout),
@@ -66,16 +81,18 @@ func main() {
 		DB:        db,
 		Reminders: reminders,
 		Briefer:   ai.NewBriefer(aiService, deps, repository.BriefingRepository{DB: db}, repository.NotificationRepository{DB: db}),
-		Search: services.SearchService{
-			Search: repository.SearchRepository{DB: db}, Notes: notes, Files: repository.FileRepository{DB: db},
-			Store: storage.LocalStore{Root: cfg.StorageDir}, Log: logger,
-		},
-		Log:      logger,
-		Interval: interval,
-		Verbose:  *once,
+		Search:    searchService,
+		Log:       logger,
+		Interval:  interval,
+		Verbose:   *once,
 	}
 	sched := scheduler.New(db, logger)
 	jobs.Register(sched)
+	automationTools := ai.AutomationTools(deps)
+	workflow.Engine{
+		DB: db, Settings: repository.SettingsRepository{DB: db}, Events: bus, Log: logger,
+		Executor: ai.Executor{Tools: automationTools, Actions: repository.AIActionRepository{DB: db}, Settings: repository.SettingsRepository{DB: db}, Log: logger},
+	}.Register(sched, interval)
 	if !aiService.Status().Enabled {
 		logger.Printf("AI disabled: scheduled briefings are off")
 	}

@@ -27,6 +27,10 @@ type AIAction struct {
 	Source string `json:"source"`
 	// ConversationID is the chat the action came from, if any.
 	ConversationID *uint64 `json:"conversation_id"`
+	// AutomationID is the automation that took the action, if any.
+	AutomationID *uint64 `json:"automation_id"`
+	// IdempotencyKey lets a retried automation run skip actions it took.
+	IdempotencyKey *string `json:"-"`
 	Tool           *string `json:"tool"`
 	Risk           *string `json:"risk"`
 	Summary        *string `json:"summary"`

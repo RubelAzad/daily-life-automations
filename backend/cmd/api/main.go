@@ -9,12 +9,14 @@ import (
 	"lifeos-ai/backend/internal/ai"
 	"lifeos-ai/backend/internal/config"
 	"lifeos-ai/backend/internal/database"
+	"lifeos-ai/backend/internal/events"
 	"lifeos-ai/backend/internal/handlers"
 	"lifeos-ai/backend/internal/middleware"
 	"lifeos-ai/backend/internal/models"
 	"lifeos-ai/backend/internal/repository"
 	"lifeos-ai/backend/internal/services"
 	"lifeos-ai/backend/internal/storage"
+	"lifeos-ai/backend/internal/workflow"
 )
 
 func main() {
@@ -44,11 +46,12 @@ func main() {
 	taskLists := repository.TaskListRepository{DB: db}
 	taskListService := services.TaskListService{Lists: taskLists}
 	projects := repository.ProjectRepository{DB: db}
-	taskService := services.TaskService{Tasks: repository.TaskRepository{DB: db}, Lists: taskLists, Projects: projects}
+	bus := events.Bus{} // automation events, queued in the same transaction as each change
+	taskService := services.TaskService{Tasks: repository.TaskRepository{DB: db}, Lists: taskLists, Projects: projects, Events: bus}
 	projectHandler := handlers.ProjectHandler{Projects: services.ProjectService{Projects: projects}}
-	events := repository.CalendarEventRepository{DB: db}
+	calEvents := repository.CalendarEventRepository{DB: db}
 	reminders := repository.ReminderRepository{DB: db}
-	calendarService := services.CalendarService{Events: events, Reminders: reminders}
+	calendarService := services.CalendarService{Events: calEvents, Reminders: reminders}
 	calendarHandler := handlers.CalendarHandler{Calendar: calendarService}
 	notes := repository.NoteRepository{DB: db}
 	todayHandler := handlers.TodayHandler{Today: services.TodayService{
@@ -61,10 +64,10 @@ func main() {
 	searchHandler := handlers.SearchHandler{Service: searchService}
 	noteHandler := handlers.NoteHandler{Notes: services.NoteService{
 		Notes: notes, Files: repository.FileRepository{DB: db}, Projects: projects, Reminders: reminders,
-		Store: store, MaxUploadBytes: cfg.MaxUploadBytes, Index: searchService,
+		Store: store, MaxUploadBytes: cfg.MaxUploadBytes, Index: searchService, Events: bus,
 	}}
 	reminderHandler := handlers.ReminderHandler{
-		Reminders:     services.ReminderService{Reminders: reminders, Tasks: repository.TaskRepository{DB: db}, Events: events, Notes: notes},
+		Reminders:     services.ReminderService{Reminders: reminders, Tasks: repository.TaskRepository{DB: db}, Events: calEvents, Notes: notes},
 		Notifications: services.NotificationService{Notifications: repository.NotificationRepository{DB: db}},
 	}
 
@@ -90,6 +93,19 @@ func main() {
 	aiHandler := handlers.AIHandler{
 		AI:      aiService,
 		Briefer: ai.NewBriefer(aiService, aiDeps, repository.BriefingRepository{DB: db}, repository.NotificationRepository{DB: db}),
+	}
+	// Automations run their actions through the same executor (approval
+	// policy and audit log) with a smaller tool allowlist.
+	automationTools := ai.AutomationTools(ai.Deps{
+		Tasks: taskService, Notes: noteHandler.Notes, Reminders: reminderHandler.Reminders,
+		Notifications: repository.NotificationRepository{DB: db},
+	})
+	automationHandler := handlers.AutomationHandler{
+		Automations: workflow.Service{DB: db, Settings: repository.SettingsRepository{DB: db}, Tools: automationTools},
+		Engine: workflow.Engine{
+			DB: db, Settings: repository.SettingsRepository{DB: db}, Events: bus,
+			Executor: ai.Executor{Tools: automationTools, Actions: repository.AIActionRepository{DB: db}, Settings: repository.SettingsRepository{DB: db}},
+		},
 	}
 	if st := aiService.Status(); st.Enabled {
 		log.Printf("AI enabled: provider=%s model=%s", st.Provider, st.Model)
@@ -178,6 +194,16 @@ func main() {
 	protected.DELETE("/files/:id", noteHandler.DeleteFile)
 	protected.GET("/search", searchHandler.Search)
 	protected.GET("/system/status", handlers.SystemHandler{DB: db}.Status)
+	protected.GET("/automations/catalog", automationHandler.Catalog)
+	protected.GET("/automations/runs", automationHandler.ListRuns)
+	protected.GET("/automations/runs/:id", automationHandler.GetRun)
+	protected.POST("/automations/runs/:id/retry", automationHandler.RetryRun)
+	protected.GET("/automations", automationHandler.List)
+	protected.POST("/automations", automationHandler.Create)
+	protected.GET("/automations/:id", automationHandler.Get)
+	protected.PATCH("/automations/:id", automationHandler.Update)
+	protected.DELETE("/automations/:id", automationHandler.Delete)
+	protected.POST("/automations/:id/run", automationHandler.Run)
 	protected.GET("/tags", noteHandler.ListTags)
 	protected.PATCH("/tags/:id", noteHandler.UpdateTag)
 	protected.DELETE("/tags/:id", noteHandler.DeleteTag)
