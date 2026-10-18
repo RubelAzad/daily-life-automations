@@ -70,6 +70,8 @@ export type ApprovalMode = "always" | "high_impact_only";
 export type Settings = {
   timezone: string;
   week_starts_on: WeekStart;
+  /** ISO 4217 code money amounts are in, e.g. "BDT". */
+  currency: string;
   quiet_hours_enabled: boolean;
   quiet_hours_start: string; // "HH:MM"
   quiet_hours_end: string;
@@ -987,4 +989,144 @@ export async function getAutomationRun(id: number) {
 /** Retries a failed run now, from the step that failed. */
 export async function retryAutomationRun(id: number) {
   return (await request<{ data: WorkflowRun }>(`/automations/runs/${id}/retry`, { method: "POST" })).data;
+}
+
+// ---- Finance ---------------------------------------------------------------
+
+/** Amounts are numbers with at most two decimals, in the user's currency. */
+export type Expense = {
+  id: number;
+  amount: number;
+  category: string;
+  description: string | null;
+  spent_on: string; // YYYY-MM-DD
+  bill_id: number | null;
+  created_at: string;
+};
+
+export type Income = { id: number; amount: number; source: string; description: string | null; received_on: string; created_at: string };
+
+/** A monthly limit for a category, or for all spending when category is null. */
+export type Budget = { id: number; category: string | null; monthly_limit: number; alert_percent: number; spent: number };
+
+export type BillFrequency = "weekly" | "monthly" | "quarterly" | "yearly";
+
+export type Bill = {
+  id: number;
+  name: string;
+  amount: number;
+  category: string;
+  frequency: BillFrequency;
+  due_day: number | null;
+  next_due_on: string;
+  remind_days_before: number;
+  active: boolean;
+  notes: string | null;
+  pending_task_id: number | null;
+  last_paid_on: string | null;
+};
+
+export type FinanceSummary = {
+  month: string; // YYYY-MM
+  currency: string;
+  income: number;
+  expenses: number;
+  net: number;
+  last_month_expenses: number;
+  by_category: { category: string; total: number; count: number }[];
+  by_day: { date: string; total: number }[];
+  budgets: Budget[];
+  upcoming_bills: Bill[];
+};
+
+export type MoneyListMeta = PageMeta & { sum: number };
+
+function query(params: Record<string, string | number | undefined>) {
+  return new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)])).toString();
+}
+
+export async function getFinanceSummary(month?: string) {
+  return (await request<{ data: FinanceSummary }>(`/finance/summary?${query({ month })}`)).data;
+}
+
+export async function getFinanceCategories() {
+  return (await request<{ data: string[] }>("/finance/categories")).data;
+}
+
+export function listExpenses(params: { month?: string; category?: string; q?: string; bill_id?: number; page?: number; per_page?: number } = {}) {
+  return request<{ data: Expense[]; meta: MoneyListMeta }>(`/expenses?${query(params)}`);
+}
+
+export type ExpenseInput = { amount: number | string; category: string; description?: string | null; spent_on?: string };
+
+export async function createExpense(input: ExpenseInput) {
+  return (await request<{ data: Expense }>("/expenses", { method: "POST", body: JSON.stringify(input) })).data;
+}
+
+export async function updateExpense(id: number, input: Partial<ExpenseInput>) {
+  return (await request<{ data: Expense }>(`/expenses/${id}`, { method: "PATCH", body: JSON.stringify(input) })).data;
+}
+
+export function deleteExpense(id: number) {
+  return request<void>(`/expenses/${id}`, { method: "DELETE" });
+}
+
+export function listIncomes(params: { month?: string; page?: number; per_page?: number } = {}) {
+  return request<{ data: Income[]; meta: MoneyListMeta }>(`/incomes?${query(params)}`);
+}
+
+export type IncomeInput = { amount: number | string; source: string; description?: string | null; received_on?: string };
+
+export async function createIncome(input: IncomeInput) {
+  return (await request<{ data: Income }>("/incomes", { method: "POST", body: JSON.stringify(input) })).data;
+}
+
+export async function updateIncome(id: number, input: Partial<IncomeInput>) {
+  return (await request<{ data: Income }>(`/incomes/${id}`, { method: "PATCH", body: JSON.stringify(input) })).data;
+}
+
+export function deleteIncome(id: number) {
+  return request<void>(`/incomes/${id}`, { method: "DELETE" });
+}
+
+export type BudgetInput = { category?: string | null; monthly_limit?: number | string; alert_percent?: number };
+
+export async function createBudget(input: BudgetInput) {
+  return (await request<{ data: Budget }>("/budgets", { method: "POST", body: JSON.stringify(input) })).data;
+}
+
+export async function updateBudget(id: number, input: BudgetInput) {
+  return (await request<{ data: Budget }>(`/budgets/${id}`, { method: "PATCH", body: JSON.stringify(input) })).data;
+}
+
+export function deleteBudget(id: number) {
+  return request<void>(`/budgets/${id}`, { method: "DELETE" });
+}
+
+export async function listBills() {
+  return (await request<{ data: Bill[] }>("/bills")).data;
+}
+
+export type BillInput = Partial<Pick<Bill, "name" | "category" | "frequency" | "next_due_on" | "remind_days_before" | "active" | "notes">> & { amount?: number | string };
+
+export async function createBill(input: BillInput) {
+  return (await request<{ data: Bill }>("/bills", { method: "POST", body: JSON.stringify(input) })).data;
+}
+
+export async function updateBill(id: number, input: BillInput) {
+  return (await request<{ data: Bill }>(`/bills/${id}`, { method: "PATCH", body: JSON.stringify(input) })).data;
+}
+
+export function deleteBill(id: number) {
+  return request<void>(`/bills/${id}`, { method: "DELETE" });
+}
+
+/** Records that the user paid the bill (an expense) and moves it to its next due date. */
+export async function payBill(id: number, input: { amount?: number | string; paid_on?: string } = {}) {
+  return (await request<{ data: { bill: Bill; expense: Expense } }>(`/bills/${id}/pay`, { method: "POST", body: JSON.stringify(input) })).data;
+}
+
+/** Adds the bill's "Pay …" task for its current due date, or returns the open one. */
+export async function createBillTask(id: number) {
+  return (await request<{ data: { bill: Bill; task: Task; created: boolean } }>(`/bills/${id}/task`, { method: "POST" })).data;
 }

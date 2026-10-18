@@ -19,7 +19,7 @@ import (
 func TestTemplates(t *testing.T) {
 	f := newFixture(t, models.ApprovalAlways)
 	list, err := f.service.ListTemplates(f.ctx, f.user)
-	if err != nil || len(list) != 2 || list[0].AutomationID != nil || list[1].Key != "missed_task_recovery" {
+	if err != nil || len(list) != 4 || list[0].AutomationID != nil || list[1].Key != "missed_task_recovery" {
 		t.Fatalf("templates: %+v %v", list, err)
 	}
 	plan, err := f.service.AddTemplate(f.ctx, f.user, "daily_planning")

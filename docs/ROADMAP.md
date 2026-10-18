@@ -41,8 +41,8 @@ All 20 modules from [DAILY_LIFE_MODULES.md](DAILY_LIFE_MODULES.md), split into s
 
 | Step | Scope | Module | Status |
 |---|---|---|---|
-| 4.1 | Finance: expenses, income, budgets, recurring bills; workflow C | 5 | ⬜ Next |
-| 4.2 | Subscriptions & renewals | 15 | ⬜ |
+| 4.1 | Finance: expenses, income, budgets, recurring bills; workflow C | 5 | ✅ Done |
+| 4.2 | Subscriptions & renewals | 15 | ⬜ Next |
 | 4.3 | Shopping lists, groceries, errands | 6 | ⬜ |
 | 4.4 | Habits, routines, streaks | 7 | ⬜ |
 | 4.5 | Contacts & important dates | 14 | ⬜ |

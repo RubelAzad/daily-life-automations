@@ -4,6 +4,7 @@ import (
 	"context"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 	// Bundles the IANA time zone database, so time zones work on machines
 	// without one (Windows, minimal containers).
@@ -20,6 +21,7 @@ type SettingsService struct {
 type UpdateSettingsInput struct {
 	Timezone          Optional[string] `json:"timezone"`
 	WeekStartsOn      Optional[int]    `json:"week_starts_on"`
+	Currency          Optional[string] `json:"currency"`
 	QuietHoursEnabled Optional[bool]   `json:"quiet_hours_enabled"`
 	QuietHoursStart   Optional[string] `json:"quiet_hours_start"`
 	QuietHoursEnd     Optional[string] `json:"quiet_hours_end"`
@@ -31,7 +33,10 @@ type UpdateSettingsInput struct {
 	EveningSummaryTime     Optional[string] `json:"evening_summary_time"`
 }
 
-var clockPattern = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
+var (
+	clockPattern    = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
+	currencyPattern = regexp.MustCompile(`^[A-Z]{3}$`)
+)
 
 func (s SettingsService) Get(ctx context.Context, userID uint64) (models.UserSettings, error) {
 	return s.Settings.Get(ctx, userID)
@@ -70,6 +75,14 @@ func (s SettingsService) Update(ctx context.Context, userID uint64, in UpdateSet
 			c.fail("week_starts_on", "must be 0 (Sunday), 1 (Monday) or 6 (Saturday)")
 		default:
 			settings.WeekStartsOn = v
+		}
+	}
+	if in.Currency.Set {
+		code := strings.ToUpper(strings.TrimSpace(in.Currency.Value))
+		if in.Currency.Null || !currencyPattern.MatchString(code) {
+			c.fail("currency", "must be a 3-letter ISO 4217 code, e.g. BDT or USD")
+		} else {
+			settings.Currency = code
 		}
 	}
 	if in.QuietHoursEnabled.Set {

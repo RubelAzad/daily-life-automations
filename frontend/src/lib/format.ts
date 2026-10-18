@@ -106,3 +106,12 @@ export function isPastDate(value: string, now = new Date()): boolean {
 function startOfDay(d: Date): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
+
+/** An amount in the user's currency, e.g. "BDT 1,250.00" (the browser's locale decides the layout). */
+export function formatMoney(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency}`; // an unknown code
+  }
+}

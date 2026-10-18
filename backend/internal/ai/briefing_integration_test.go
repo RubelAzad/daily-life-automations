@@ -146,8 +146,12 @@ func TestScheduledBriefings(t *testing.T) {
 	if len(list) != 1 || list[0].Kind != models.BriefingMorning || list[0].Trigger != "scheduled" {
 		t.Fatalf("scheduled briefings: %+v", list)
 	}
-	if len(rec.reqs) != 1 {
-		t.Errorf("model calls: %d", len(rec.reqs))
+	// RunScheduled serves every user with a briefing due, including other
+	// accounts in the shared database, so count this user's calls only.
+	var calls int
+	_ = testDB.QueryRow(`SELECT COUNT(*) FROM ai_actions WHERE user_id = ? AND kind = 'llm_call'`, f.user).Scan(&calls)
+	if calls != 1 || len(rec.reqs) < 1 {
+		t.Errorf("model calls for this user: %d", calls)
 	}
 	var n int
 	_ = testDB.QueryRow(`SELECT COUNT(*) FROM notifications WHERE user_id = ? AND kind = 'briefing' AND idempotency_key = ?`,

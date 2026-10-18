@@ -154,6 +154,27 @@ export default function SettingsView() {
             {fieldError("week_starts_on")}
           </section>
 
+          <section className={section} aria-labelledby="currency-heading">
+            <h2 id="currency-heading" className="font-medium">
+              Currency
+            </h2>
+            <input
+              list="currency-options"
+              value={draft.currency}
+              onChange={(e) => set("currency", e.target.value.toUpperCase().slice(0, 3))}
+              aria-labelledby="currency-heading"
+              placeholder="USD"
+              className={`${control} w-28 uppercase`}
+            />
+            <datalist id="currency-options">
+              {["BDT", "USD", "EUR", "GBP", "INR", "JPY", "AUD", "CAD", "SGD", "AED", "SAR", "MYR"].map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+            {fieldError("currency")}
+            <p className="text-xs text-zinc-500">The 3-letter code for amounts on the Finance page, e.g. BDT. Changing it doesn&rsquo;t convert amounts already recorded.</p>
+          </section>
+
           <section className={section} aria-labelledby="quiet-heading">
             <h2 id="quiet-heading" className="font-medium">
               Quiet hours

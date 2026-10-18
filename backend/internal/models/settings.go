@@ -14,8 +14,10 @@ var ApprovalModes = []string{ApprovalAlways, ApprovalHighImpactOnly}
 type UserSettings struct {
 	UserID uint64 `json:"-"`
 	// Timezone is an IANA name such as "Asia/Dhaka".
-	Timezone          string `json:"timezone"`
-	WeekStartsOn      int    `json:"week_starts_on"` // 0 Sunday, 1 Monday, 6 Saturday
+	Timezone     string `json:"timezone"`
+	WeekStartsOn int    `json:"week_starts_on"` // 0 Sunday, 1 Monday, 6 Saturday
+	// Currency is the ISO 4217 code money amounts are in, e.g. "BDT".
+	Currency          string `json:"currency"`
 	QuietHoursEnabled bool   `json:"quiet_hours_enabled"`
 	QuietHoursStart   string `json:"quiet_hours_start"` // "HH:MM" local time
 	QuietHoursEnd     string `json:"quiet_hours_end"`
@@ -34,6 +36,7 @@ func DefaultSettings(userID uint64) UserSettings {
 		UserID:              userID,
 		Timezone:            "UTC",
 		WeekStartsOn:        1,
+		Currency:            "USD",
 		QuietHoursStart:     "22:00",
 		QuietHoursEnd:       "07:00",
 		AIApprovalMode:      ApprovalAlways,

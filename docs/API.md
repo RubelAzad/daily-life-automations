@@ -129,8 +129,8 @@ A morning plan and an evening wrap-up, written by the model from the user's day.
 
 | Risk | Tools | Needs approval |
 |---|---|---|
-| `read` | `get_today`, `list_tasks`, `list_events`, `search_notes`, `search_documents` | Never |
-| `low` | `create_task`, `complete_task`, `reschedule_task`, `recover_task`, `carry_forward_tasks`, `create_event`, `create_note`, `create_reminder` | When `ai_approval_mode` is `always` (the default) |
+| `read` | `get_today`, `list_tasks`, `list_events`, `search_notes`, `search_documents`, `get_finance_summary` | Never |
+| `low` | `create_task`, `complete_task`, `reschedule_task`, `recover_task`, `record_expense`, `create_bill_task`, `pay_bill`, `carry_forward_tasks`, `create_event`, `create_note`, `create_reminder` | When `ai_approval_mode` is `always` (the default) |
 | `high` | `delete_task` | Always. Sending, spending, deleting and booking can never skip approval. |
 
 **Audit log entries** (`kind`):
@@ -164,19 +164,21 @@ Module 18: **when** a trigger fires, **if** the conditions hold, **then** run th
 | Type | Fires | Condition fields |
 |---|---|---|
 | `schedule` | At `trigger.schedule`: `{frequency: "daily"\|"weekly"\|"monthly"\|"once", time: "HH:MM", weekdays: [1–7] (weekly, 1 = Monday), month_day: 1–31 (monthly; the last day in shorter months), date: "YYYY-MM-DD" (once)}`, in the user's time zone. A run more than 3 hours late (no worker running) is skipped. | — |
-| `task.created` | A task is added | `task.title`, `task.description`, `task.priority`, `task.list`, `task.project`, `task.due_at` |
+| `task.created` | A task is added | `task.title`, `task.description`, `task.priority`, `task.list`, `task.project`, `task.due_at`, `task.bill` (the bill's name, for a bill's "Pay …" task) |
 | `task.completed` | A task is marked completed | same as above |
 | `task.overdue` | An open task passes its due time (checked every `WORKER_INTERVAL_SECONDS`; tasks that went overdue in the last 24 h). Once per task and due time. | same as above |
 | `note.created` | A note is saved | `note.title`, `note.kind`, `note.tags`, `note.url`, `note.expires_on` |
 | `workflow.failed` | Another automation's run fails for good (after any automatic retries). An automation never reacts to its own failure. | `run.automation`, `run.error` |
+| `bill.due_soon` | A recurring bill's reminder day: `remind_days_before` its due date, in the user's time zone (also once it is overdue, so a worker that was down still reminds). Once per bill and due date. | `bill.name`, `bill.category` |
+| `budget.exceeded` | This month's spending goes over a budget. Once per budget and month. | `budget.category` (`Overall` for the all-spending budget) |
 | `manual` | Only by `POST /automations/:id/run` | — |
 
 **Conditions:** `[{field, op, value}]`, all must hold, at most 10. Operators by field type: text `equals`, `not_equals`, `contains`, `not_contains`, `is_set`, `is_not_set` (case-insensitive); choice (`priority`, `kind`) `equals`, `not_equals`, `in`, `not_in` (value is a list); tags `contains`, `not_contains`, `is_set`, `is_not_set`; dates `is_set`, `is_not_set`. Conditions see the task or note as it was when the event happened.
 
-**Actions:** `[{type, input}]`, 1–5, run in order; a failed step stops the run. `type` is one of `notify` (`title`, `body`, `link`: an app path like `/tasks`), `create_task`, `complete_task`, `reschedule_task`, `recover_task`, `create_note`, `create_reminder`, `plan_day`, with the same input as the assistant's tools. Nothing that deletes, sends or spends.
-- **`recover_task`** (`task_id`, `minutes` 15–240, default 30): moves the task to the first free slot of that length, starting on the quarter hour: after busy timed events (and their prep time) and other open tasks (each taken to occupy the 30 minutes before its due time), outside quiet hours, within 7 days. Urgent, high and medium tasks search from now, low-priority ones from tomorrow. The due time becomes the slot's end. The chosen start is recorded with the action as `at`, so the approval request shows the time and approving moves the task there (it fails if that time has passed, or the task was completed meanwhile). If today's plan exists, the task's block moves with it. No model call.
+**Actions:** `[{type, input}]`, 1–5, run in order; a failed step stops the run. `type` is one of `notify` (`title`, `body`, `link`: an app path like `/tasks`), `create_task`, `complete_task`, `reschedule_task`, `recover_task`, `create_note`, `create_reminder`, `plan_day`, `record_expense`, `create_bill_task` (`bill_id`), `pay_bill` (`bill_id`, `task_id`, `amount`), with the same input as the assistant's tools. Nothing that deletes, sends or spends.
+- **`recover_task`** (`task_id`, `minutes` 15–240, default 30): moves the task to the first free slot of that length, starting on the quarter hour: after busy timed events (and their prep time) and other open tasks (each taken to occupy the 30 minutes before its due time), outside quiet hours (the window set in Settings, used as sleeping time even when holding reminders is off), within 7 days. Urgent, high and medium tasks search from now, low-priority ones from tomorrow. The due time becomes the slot's end. The chosen start is recorded with the action as `at`, so the approval request shows the time and approving moves the task there (it fails if that time has passed, or the task was completed meanwhile). If today's plan exists, the task's block moves with it. No model call.
 - **`plan_day`** (`refresh`, default `false`): writes today's plan (the [morning briefing](#briefings)) and sends its notification. It reuses a plan already made today, so the Settings briefing and an automation share one plan and one model call; `refresh: true` writes a new one. Never needs approval. Fails without retrying when the AI assistant is off.
-- **Placeholders** in strings: `{{automation.name}}`, `{{today}}` (local `YYYY-MM-DD`), `{{now}}`, and for task triggers `{{task.id}}`, `{{task.title}}`, `{{task.priority}}`, `{{task.status}}`, `{{task.list}}`, `{{task.project}}`, `{{task.due}}` (local, readable), for notes `{{note.id}}`, `{{note.title}}`, `{{note.kind}}`, `{{note.url}}`, `{{note.tags}}`, for `workflow.failed` `{{run.id}}`, `{{run.automation}}`, `{{run.error}}`. `"task_id": "{{task.id}}"` becomes the number. A placeholder the trigger doesn't have is a `422`.
+- **Placeholders** in strings: `{{automation.name}}`, `{{today}}` (local `YYYY-MM-DD`), `{{now}}`, and for task triggers `{{task.id}}`, `{{task.title}}`, `{{task.priority}}`, `{{task.status}}`, `{{task.list}}`, `{{task.project}}`, `{{task.due}}` (local, readable), for notes `{{note.id}}`, `{{note.title}}`, `{{note.kind}}`, `{{note.url}}`, `{{note.tags}}`, for `workflow.failed` `{{run.id}}`, `{{run.automation}}`, `{{run.error}}`, for `bill.due_soon` `{{bill.id}}`, `{{bill.name}}`, `{{bill.amount}}` (e.g. `2,400.00 BDT`), `{{bill.category}}`, `{{bill.due}}` (`Tue 20 Oct`), `{{bill.due_on}}`, `{{bill.days_left}}`, for `budget.exceeded` `{{budget.id}}`, `{{budget.category}}`, `{{budget.limit}}`, `{{budget.spent}}`, `{{budget.month}}`, and on task triggers for a bill's task `{{task.bill}}` and `{{bill.id}}`. `"task_id": "{{task.id}}"` becomes the number. A placeholder the trigger doesn't have is a `422`.
 - **Relative times** in `due_at` and `remind_at`: `+30m`, `+2h`, `+1d`, `+1d 09:00`, `today 17:00`, `tomorrow 09:00` (local), or RFC 3339.
 - **Checked on save:** each action is decoded strictly against its tool's schema with sample values, so a broken action is a `422`, not a failed run later.
 
@@ -190,6 +192,8 @@ Ready-made automations, added with `POST /automations/templates/:key`. Once adde
 |---|---|---|---|---|
 | `daily_planning` | Plan my day | Every day at 07:00 | `plan_day` | None (reads the day, sends a notification). Needs the AI assistant. |
 | `missed_task_recovery` | Recover missed tasks | `task.overdue` | `recover_task` with `task_id: {{task.id}}` | The user's setting; with `always` each move waits in Approvals |
+| `bill_reminders` | Bill reminders (workflow C) | `bill.due_soon` | `notify` ("Internet is due Tue 20 Oct", with the amount), then `create_bill_task` | The notification never; the task follows the user's setting. Adding it also adds `bill_payments`. |
+| `bill_payments` | Record paid bills | `task.completed` where `task.bill` is set | `pay_bill` with `bill_id: {{bill.id}}`, `task_id: {{task.id}}` | The user's setting |
 
 ### Runs
 
@@ -234,6 +238,37 @@ Actions from the assistant and from automations that wait for the user's decisio
 - **Notification:** a run that starts waiting sends one notification linking to `/approvals`.
 - **Isolation:** another user's request is a `404` (or `not found` in a bulk result).
 
+## Finance
+
+Expenses, income, monthly budgets and recurring bills, in the user's `currency` ([Settings](#settings)). **Amounts** are JSON numbers with at most two decimals (`1250.5`; a string `"1250.50"` is accepted too), more than 0; they are stored as whole cents, so totals are exact. More decimals is a `422` on that field. Dates are `YYYY-MM-DD`, defaulting to the user's today. LifeOS only records money; it never pays anything.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/finance/summary` | `?month=YYYY-MM` (default this month): `{month, currency, income, expenses, net, last_month_expenses, by_category: [{category, total, count}], by_day: [{date, total}], budgets, upcoming_bills}`. Upcoming bills are active ones due within 30 days, or overdue. |
+| GET | `/finance/categories` | Categories the user has used (most used first), then suggestions (Groceries, Dining, Transport, Rent, Utilities, …). Any text up to 40 characters is a category. |
+| GET | `/expenses` | Newest first. Query: `month` or `from`/`to`, `category`, `q` (description or category), `bill_id`, `page`, `per_page`. `meta.sum` is the total of all matching. |
+| POST | `/expenses` | `amount`, `category`, `description` (≤ 255), `spent_on`. `201`. |
+| GET, PATCH, DELETE | `/expenses/:id` | |
+| GET | `/incomes` | Newest first. Query: `month` or `from`/`to`, `page`, `per_page`; `meta.sum`. |
+| POST | `/incomes` | `amount`, `source` (e.g. Salary, ≤ 100), `description`, `received_on`. |
+| PATCH, DELETE | `/incomes/:id` | |
+| GET | `/budgets` | With `spent` this month (or `?month=`). The overall budget (`category: null`) first. |
+| POST | `/budgets` | `category` (`null` or empty: all spending), `monthly_limit`, `alert_percent` (1–100, default 80). One budget per category: `422` on `category` otherwise. |
+| PATCH, DELETE | `/budgets/:id` | |
+| GET | `/bills` | Active first, soonest due first. |
+| POST | `/bills` | `name`, `amount` (expected), `next_due_on` required; `category` (default Utilities), `frequency` (`weekly`, `monthly` (default), `quarterly`, `yearly`), `remind_days_before` (0–14, default 3), `active`, `notes`. |
+| GET, PATCH, DELETE | `/bills/:id` | Deleting keeps its payments as expenses. |
+| POST | `/bills/:id/pay` | Records that the user paid it: an expense (`amount`, default the bill's; `paid_on`, default today; the bill's category; linked by `bill_id`), and the bill moves to its next due date. Its open "Pay …" task is completed. Body optional. |
+| POST | `/bills/:id/task` | Adds the "Pay <name>" task for the current due date (due 09:00 local that day, high priority): `201 {bill, task, created: true}`, or `200` with the open one. |
+
+**Due dates:** a monthly, quarterly or yearly bill keeps the day of month of the `next_due_on` it was given; in shorter months it is due on the last day (a bill due on the 31st is due 28 February, then 31 March).
+
+**Budget alerts:** when an expense this month brings a budget to its `alert_percent`, the user gets a notification ("Groceries budget: 80% used", "Spent 4,100.00 BDT of 5,000.00 BDT this month."), and at 100% a high-priority one ("Groceries budget exceeded") plus a `budget.exceeded` event for automations. Each once per budget and month. Expenses dated in other months don't alert.
+
+**Bill reminders (workflow C)** are automations: add the built-in workflow **Bill reminders** (`POST /automations/templates/bill_reminders`, which also adds **Record paid bills**). The worker emits `bill.due_soon` on each bill's reminder day; the workflow sends the reminder with the amount and adds the "Pay …" task; completing the task records the payment and moves the bill on, once (paying from the bill instead completes the task without recording it twice).
+
+**Assistant tools:** `record_expense` (changes), `get_finance_summary` (looks up), `create_bill_task` and `pay_bill` (changes).
+
 ## Settings
 
 | Method | Path | Notes |
@@ -245,6 +280,7 @@ Actions from the assistant and from automations that wait for the user's decisio
 |---|---|---|---|
 | `timezone` | IANA name, e.g. `Asia/Dhaka` (not `Local`) | browser's zone at sign-up, else `UTC` | Repeating tasks and events keep the same local time (also across daylight saving); "today" for *expiring soon*; note expiry reminders fire at 09:00 local; quiet hours. |
 | `week_starts_on` | `0` Sunday, `1` Monday, `6` Saturday | `1` | The calendar week |
+| `currency` | 3-letter ISO 4217 code (lower case is accepted) | `USD` | [Finance](#finance) amounts. Changing it doesn't convert amounts already recorded. |
 | `quiet_hours_enabled` | `true`/`false` | `false` | |
 | `quiet_hours_start`, `quiet_hours_end` | `HH:MM`, local time; must differ | `22:00`, `07:00` | Start later than end means the window crosses midnight. |
 | `morning_briefing_enabled`, `evening_summary_enabled` | `true`/`false` | `false` | Automatic AI briefings (see [Briefings](#briefings)). Each is a paid model call. |

@@ -68,6 +68,7 @@ func main() {
 		Settings:      repository.SettingsRepository{DB: db},
 		Briefings:     repository.BriefingRepository{DB: db},
 	}
+	deps.Finance = services.FinanceService{Finance: repository.FinanceRepository{DB: db}, Settings: repository.SettingsRepository{DB: db}, Tasks: taskService, Events: bus}
 	aiService := ai.NewService(
 		ai.NewClient(cfg.AI.Provider, cfg.AI.APIKey, cfg.AI.Model, cfg.AI.BaseURL, cfg.AI.MaxTokens, cfg.AI.Timeout),
 		ai.Executor{Tools: ai.NewRegistry(), Actions: repository.AIActionRepository{DB: db}, Settings: repository.SettingsRepository{DB: db}, Log: logger},
@@ -100,6 +101,12 @@ func main() {
 		Executor: ai.Executor{Tools: automationTools, Actions: repository.AIActionRepository{DB: db}, Settings: repository.SettingsRepository{DB: db}, Log: logger},
 	}
 	engine.Register(sched, interval)
+	// Bill reminders: bill.due_soon for automations such as "Bill reminders"
+	// (once per bill and due date: repeats are dropped by the event's key).
+	sched.Every(scheduler.Repeating{Kind: "finance.scan_bills", Every: interval, Handler: func(ctx context.Context, _ scheduler.Job) error {
+		_, err := deps.Finance.ScanBills(ctx)
+		return err
+	}})
 	// Expiring only marks requests; it never runs a tool.
 	approvals.Service{DB: db, Executor: engine.Executor, Engine: engine, Log: logger}.Register(sched, interval)
 	if !aiService.Status().Enabled {
