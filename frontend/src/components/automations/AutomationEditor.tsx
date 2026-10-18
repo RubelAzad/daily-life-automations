@@ -63,6 +63,17 @@ const ACTION_FIELDS: Record<string, { key: string; label: string; placeholder?: 
     { key: "minutes", label: "Time it needs (minutes)", placeholder: "30" },
   ],
   plan_day: [{ key: "refresh", label: "If today already has a plan", choices: ["", "true"] }],
+  record_expense: [
+    { key: "amount", label: "Amount", placeholder: "12.50" },
+    { key: "category", label: "Category", placeholder: "Groceries" },
+    { key: "description", label: "Note" },
+    { key: "spent_on", label: "Date (YYYY-MM-DD)", placeholder: "{{today}}" },
+  ],
+  create_bill_task: [{ key: "bill_id", label: "Bill", placeholder: "{{bill.id}}" }],
+  pay_bill: [
+    { key: "bill_id", label: "Bill", placeholder: "{{bill.id}}" },
+    { key: "task_id", label: "Its completed task", placeholder: "{{task.id}}" },
+  ],
 };
 
 /** Labels for choice values that aren't self-explanatory. */
@@ -103,11 +114,12 @@ function cleanInput(type: string, input: Record<string, unknown>): Record<string
   for (const [k, v] of Object.entries(input)) {
     if (typeof v === "string" && v.trim() === "") continue;
     if (k === "tags" && typeof v === "string") out[k] = v.split(",").map((t) => t.trim()).filter(Boolean);
-    else if ((k === "task_id" || k === "minutes") && typeof v === "string" && /^\d+$/.test(v.trim())) out[k] = Number(v);
+    else if ((k === "task_id" || k === "minutes" || k === "bill_id") && typeof v === "string" && /^\d+$/.test(v.trim())) out[k] = Number(v);
     else if (k === "refresh") out[k] = v === true || v === "true";
     else out[k] = v;
   }
   if ((type === "complete_task" || type === "reschedule_task" || type === "recover_task") && out.task_id === undefined) out.task_id = "{{task.id}}";
+  if ((type === "create_bill_task" || type === "pay_bill") && out.bill_id === undefined) out.bill_id = "{{bill.id}}";
   return out;
 }
 

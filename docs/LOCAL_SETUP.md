@@ -76,7 +76,7 @@ go run ./cmd/worker -once      # run every system job and anything else that is 
 
 It's safe to run more than one worker, or to restart one at any time: each system job runs in one worker at a time, reminders are also claimed with a row lock, and each notification has a unique key, so nothing is delivered twice.
 
-Automations run here: their schedules, the events that trigger them (`task.created`, …, queued by the API in the same transaction as the change) and the overdue-task check. The worker also expires approval requests left undecided for 24 hours (**Approvals** in the menu), failing the runs that waited on them. Without a worker they don't run, except **Run now**, which runs in the API.
+Automations run here: their schedules, the events that trigger them (`task.created`, …, queued by the API in the same transaction as the change) and the overdue-task check. It also checks recurring bills (Finance page) and emits `bill.due_soon` on each one's reminder day, for the **Bill reminders** workflow. The worker also expires approval requests left undecided for 24 hours (**Approvals** in the menu), failing the runs that waited on them. Without a worker they don't run, except **Run now**, which runs in the API.
 
 Scheduled AI briefings are only made for users who turned them on in Settings, and only when AI is configured. Search indexing extracts text from uploads the API didn't get to (and from files uploaded before search existed) and re-indexes changed notes.
 

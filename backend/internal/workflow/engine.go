@@ -574,9 +574,9 @@ func summarize(t trigger, loc *time.Location) *string {
 	case t.source == "manual":
 		return strPtr("Run by hand")
 	}
-	for _, subject := range []string{"task", "note", "run"} {
+	for _, subject := range []string{"task", "note", "run", "bill", "budget"} {
 		if d, ok := t.data[subject].(map[string]any); ok {
-			for _, k := range []string{"title", "automation"} {
+			for _, k := range []string{"title", "automation", "name", "category"} {
 				if s, ok := d[k].(string); ok && s != "" {
 					return strPtr(truncateRunes(s, 255))
 				}

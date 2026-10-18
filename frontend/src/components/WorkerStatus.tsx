@@ -10,6 +10,7 @@ const JOB_LABELS: Record<string, string> = {
   "search.index": "Search indexing",
   "automation.scan_overdue": "Overdue-task check for automations",
   "approvals.expire": "Expiring old approval requests",
+  "finance.scan_bills": "Bill reminders",
   "scheduler.prune": "Clean-up of old jobs",
 };
 

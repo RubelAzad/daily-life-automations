@@ -21,6 +21,7 @@ type Deps struct {
 	Reminders services.ReminderService
 	Today     services.TodayService
 	Search    services.SearchService
+	Finance   services.FinanceService
 	// Notifications is used by the automation-only notify tool.
 	Notifications repository.NotificationRepository
 	// Settings (time zone, quiet hours) and Briefings (today's plan) are
@@ -41,6 +42,7 @@ func BuiltinTools(d Deps) *Registry {
 		getTodayTool(d), listTasksTool(d), createTaskTool(d), completeTaskTool(d), rescheduleTaskTool(d),
 		carryForwardTool(d), deleteTaskTool(d), listEventsTool(d), createEventTool(d),
 		searchNotesTool(d), searchDocumentsTool(d), createNoteTool(d), createReminderTool(d), recoverTaskTool(d),
+		recordExpenseTool(d), financeSummaryTool(d), createBillTaskTool(d), payBillTool(d),
 	)
 }
 

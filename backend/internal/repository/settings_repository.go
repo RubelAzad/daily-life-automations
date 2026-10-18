@@ -27,24 +27,24 @@ func (r SettingsRepository) Get(ctx context.Context, userID uint64) (models.User
 // Save inserts or replaces the user's settings row.
 func (r SettingsRepository) Save(ctx context.Context, s models.UserSettings) error {
 	_, err := r.DB.ExecContext(ctx,
-		`INSERT INTO user_settings (user_id, timezone, week_starts_on, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, ai_approval_mode,
+		`INSERT INTO user_settings (user_id, timezone, week_starts_on, currency, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, ai_approval_mode,
 		                            morning_briefing_enabled, morning_briefing_time, evening_summary_enabled, evening_summary_time)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		 ON DUPLICATE KEY UPDATE timezone = VALUES(timezone), week_starts_on = VALUES(week_starts_on),
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 ON DUPLICATE KEY UPDATE timezone = VALUES(timezone), week_starts_on = VALUES(week_starts_on), currency = VALUES(currency),
 		   quiet_hours_enabled = VALUES(quiet_hours_enabled), quiet_hours_start = VALUES(quiet_hours_start),
 		   quiet_hours_end = VALUES(quiet_hours_end), ai_approval_mode = VALUES(ai_approval_mode),
 		   morning_briefing_enabled = VALUES(morning_briefing_enabled), morning_briefing_time = VALUES(morning_briefing_time),
 		   evening_summary_enabled = VALUES(evening_summary_enabled), evening_summary_time = VALUES(evening_summary_time)`,
-		s.UserID, s.Timezone, s.WeekStartsOn, s.QuietHoursEnabled, s.QuietHoursStart, s.QuietHoursEnd, s.AIApprovalMode,
+		s.UserID, s.Timezone, s.WeekStartsOn, s.Currency, s.QuietHoursEnabled, s.QuietHoursStart, s.QuietHoursEnd, s.AIApprovalMode,
 		s.MorningBriefingEnabled, s.MorningBriefingTime, s.EveningSummaryEnabled, s.EveningSummaryTime)
 	return err
 }
 
-const settingsColumns = `user_id, timezone, week_starts_on, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, ai_approval_mode,
+const settingsColumns = `user_id, timezone, week_starts_on, currency, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, ai_approval_mode,
 	morning_briefing_enabled, morning_briefing_time, evening_summary_enabled, evening_summary_time, updated_at`
 
 func settingsDest(s *models.UserSettings) []any {
-	return []any{&s.UserID, &s.Timezone, &s.WeekStartsOn, &s.QuietHoursEnabled, &s.QuietHoursStart, &s.QuietHoursEnd, &s.AIApprovalMode,
+	return []any{&s.UserID, &s.Timezone, &s.WeekStartsOn, &s.Currency, &s.QuietHoursEnabled, &s.QuietHoursStart, &s.QuietHoursEnd, &s.AIApprovalMode,
 		&s.MorningBriefingEnabled, &s.MorningBriefingTime, &s.EveningSummaryEnabled, &s.EveningSummaryTime, &s.UpdatedAt}
 }
 

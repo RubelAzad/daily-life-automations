@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
 
+	"lifeos-ai/backend/internal/models"
 	"lifeos-ai/backend/internal/repository"
 	"lifeos-ai/backend/internal/services"
 )
@@ -48,7 +49,11 @@ func bindJSON(c *gin.Context, dst any) bool {
 	}
 	var te *json.UnmarshalTypeError
 	if errors.As(err, &te) && te.Field != "" {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "validation failed", "fields": gin.H{te.Field: "has the wrong type"}})
+		msg := "has the wrong type"
+		if te.Type == reflect.TypeOf(models.Money(0)) {
+			msg = "must be an amount with at most two decimals"
+		}
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "validation failed", "fields": gin.H{te.Field: msg}})
 		return false
 	}
 	c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})

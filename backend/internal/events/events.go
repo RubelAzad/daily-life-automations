@@ -112,7 +112,17 @@ func TaskData(ctx context.Context, db repository.DBTX, t models.Task) map[string
 			d["project"] = name
 		}
 	}
-	return map[string]any{"task": d}
+	out := map[string]any{"task": d}
+	// A bill's "Pay …" task carries its bill, so completing it can record
+	// the payment.
+	d["bill"] = ""
+	var billID uint64
+	var billName string
+	if err := db.QueryRowContext(ctx, `SELECT id, name FROM recurring_bills WHERE pending_task_id = ? AND user_id = ?`, t.ID, t.UserID).Scan(&billID, &billName); err == nil {
+		d["bill"] = billName
+		out["bill"] = map[string]any{"id": billID, "name": billName}
+	}
+	return out
 }
 
 // NoteData is the snapshot of a note.

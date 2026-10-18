@@ -97,7 +97,7 @@ func TestApprovableAutomationToolsAreBuiltin(t *testing.T) {
 
 func TestBuiltinToolsAllowlist(t *testing.T) {
 	reg := BuiltinTools(Deps{})
-	if len(reg.All()) != 14 {
+	if len(reg.All()) != 18 {
 		t.Errorf("got %d tools", len(reg.All()))
 	}
 	for _, tool := range reg.All() {

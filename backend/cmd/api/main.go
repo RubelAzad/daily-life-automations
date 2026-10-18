@@ -72,6 +72,10 @@ func main() {
 		Notifications: services.NotificationService{Notifications: repository.NotificationRepository{DB: db}},
 	}
 
+	financeService := services.FinanceService{
+		Finance: repository.FinanceRepository{DB: db}, Settings: repository.SettingsRepository{DB: db}, Tasks: taskService, Events: bus,
+	}
+	financeHandler := handlers.FinanceHandler{Finance: financeService}
 	settingsService := services.SettingsService{Settings: repository.SettingsRepository{DB: db}}
 	settingsHandler := handlers.SettingsHandler{Settings: settingsService}
 	aiService := ai.NewService(
@@ -79,7 +83,7 @@ func main() {
 		ai.Executor{
 			Tools: ai.BuiltinTools(ai.Deps{
 				Tasks: taskService, Calendar: calendarService, Notes: noteHandler.Notes, Reminders: reminderHandler.Reminders,
-				Today: todayHandler.Today, Search: searchService,
+				Today: todayHandler.Today, Search: searchService, Finance: financeService,
 				Settings: repository.SettingsRepository{DB: db}, Briefings: repository.BriefingRepository{DB: db},
 			}),
 			Actions:  repository.AIActionRepository{DB: db},
@@ -100,8 +104,8 @@ func main() {
 	// policy and audit log) with a smaller tool allowlist.
 	automationTools := ai.AutomationTools(ai.Deps{
 		Tasks: taskService, Calendar: calendarService, Notes: noteHandler.Notes, Reminders: reminderHandler.Reminders,
-		Notifications: repository.NotificationRepository{DB: db},
-		Settings:      repository.SettingsRepository{DB: db}, Briefings: repository.BriefingRepository{DB: db}, Planner: aiHandler.Briefer,
+		Notifications: repository.NotificationRepository{DB: db}, Finance: financeService,
+		Settings: repository.SettingsRepository{DB: db}, Briefings: repository.BriefingRepository{DB: db}, Planner: aiHandler.Briefer,
 	})
 	engine := workflow.Engine{
 		DB: db, Settings: repository.SettingsRepository{DB: db}, Events: bus,
@@ -228,6 +232,29 @@ func main() {
 	protected.PATCH("/reminders/:id", reminderHandler.Update)
 	protected.DELETE("/reminders/:id", reminderHandler.Delete)
 	protected.POST("/reminders/:id/snooze", reminderHandler.Snooze)
+
+	protected.GET("/finance/summary", financeHandler.Summary)
+	protected.GET("/finance/categories", financeHandler.Categories)
+	protected.GET("/expenses", financeHandler.ListExpenses)
+	protected.POST("/expenses", financeHandler.CreateExpense)
+	protected.GET("/expenses/:id", financeHandler.GetExpense)
+	protected.PATCH("/expenses/:id", financeHandler.UpdateExpense)
+	protected.DELETE("/expenses/:id", financeHandler.DeleteExpense)
+	protected.GET("/incomes", financeHandler.ListIncomes)
+	protected.POST("/incomes", financeHandler.CreateIncome)
+	protected.PATCH("/incomes/:id", financeHandler.UpdateIncome)
+	protected.DELETE("/incomes/:id", financeHandler.DeleteIncome)
+	protected.GET("/budgets", financeHandler.ListBudgets)
+	protected.POST("/budgets", financeHandler.CreateBudget)
+	protected.PATCH("/budgets/:id", financeHandler.UpdateBudget)
+	protected.DELETE("/budgets/:id", financeHandler.DeleteBudget)
+	protected.GET("/bills", financeHandler.ListBills)
+	protected.POST("/bills", financeHandler.CreateBill)
+	protected.GET("/bills/:id", financeHandler.GetBill)
+	protected.PATCH("/bills/:id", financeHandler.UpdateBill)
+	protected.DELETE("/bills/:id", financeHandler.DeleteBill)
+	protected.POST("/bills/:id/pay", financeHandler.PayBill)
+	protected.POST("/bills/:id/task", financeHandler.BillTask)
 
 	protected.GET("/notifications", reminderHandler.ListNotifications)
 	protected.GET("/notifications/unread-count", reminderHandler.UnreadCount)
