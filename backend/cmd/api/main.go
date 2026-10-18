@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"lifeos-ai/backend/internal/ai"
+	"lifeos-ai/backend/internal/approvals"
 	"lifeos-ai/backend/internal/config"
 	"lifeos-ai/backend/internal/database"
 	"lifeos-ai/backend/internal/events"
@@ -79,6 +80,7 @@ func main() {
 			Tools: ai.BuiltinTools(ai.Deps{
 				Tasks: taskService, Calendar: calendarService, Notes: noteHandler.Notes, Reminders: reminderHandler.Reminders,
 				Today: todayHandler.Today, Search: searchService,
+				Settings: repository.SettingsRepository{DB: db}, Briefings: repository.BriefingRepository{DB: db},
 			}),
 			Actions:  repository.AIActionRepository{DB: db},
 			Settings: repository.SettingsRepository{DB: db},
@@ -97,16 +99,21 @@ func main() {
 	// Automations run their actions through the same executor (approval
 	// policy and audit log) with a smaller tool allowlist.
 	automationTools := ai.AutomationTools(ai.Deps{
-		Tasks: taskService, Notes: noteHandler.Notes, Reminders: reminderHandler.Reminders,
+		Tasks: taskService, Calendar: calendarService, Notes: noteHandler.Notes, Reminders: reminderHandler.Reminders,
 		Notifications: repository.NotificationRepository{DB: db},
+		Settings:      repository.SettingsRepository{DB: db}, Briefings: repository.BriefingRepository{DB: db}, Planner: aiHandler.Briefer,
 	})
+	engine := workflow.Engine{
+		DB: db, Settings: repository.SettingsRepository{DB: db}, Events: bus,
+		Executor: ai.Executor{Tools: automationTools, Actions: repository.AIActionRepository{DB: db}, Settings: repository.SettingsRepository{DB: db}},
+	}
 	automationHandler := handlers.AutomationHandler{
 		Automations: workflow.Service{DB: db, Settings: repository.SettingsRepository{DB: db}, Tools: automationTools},
-		Engine: workflow.Engine{
-			DB: db, Settings: repository.SettingsRepository{DB: db}, Events: bus,
-			Executor: ai.Executor{Tools: automationTools, Actions: repository.AIActionRepository{DB: db}, Settings: repository.SettingsRepository{DB: db}},
-		},
+		Engine:      engine,
 	}
+	// The inbox approves with the assistant's executor: its tools include
+	// every automation tool that can need approval.
+	approvalHandler := handlers.ApprovalHandler{Approvals: approvals.Service{DB: db, Executor: aiService.Executor, Engine: engine}}
 	if st := aiService.Status(); st.Enabled {
 		log.Printf("AI enabled: provider=%s model=%s", st.Provider, st.Model)
 	} else {
@@ -144,8 +151,14 @@ func main() {
 	protected.POST("/ai/ping", aiHandler.Ping)
 	protected.GET("/ai/actions", aiHandler.ListActions)
 	protected.GET("/ai/actions/:id", aiHandler.GetAction)
-	protected.POST("/ai/actions/:id/approve", aiHandler.Approve)
-	protected.POST("/ai/actions/:id/reject", aiHandler.Reject)
+	protected.POST("/ai/actions/:id/approve", approvalHandler.Approve)
+	protected.POST("/ai/actions/:id/reject", approvalHandler.Reject)
+	protected.GET("/approvals", approvalHandler.List)
+	protected.GET("/approvals/count", approvalHandler.Count)
+	protected.GET("/approvals/history", approvalHandler.History)
+	protected.POST("/approvals/decide", approvalHandler.DecideMany)
+	protected.POST("/approvals/:id/approve", approvalHandler.Approve)
+	protected.POST("/approvals/:id/reject", approvalHandler.Reject)
 	protected.GET("/ai/briefings/today", aiHandler.TodayBriefings)
 	protected.GET("/ai/briefings", aiHandler.ListBriefings)
 	protected.POST("/ai/briefings", aiHandler.CreateBriefing)
@@ -195,6 +208,8 @@ func main() {
 	protected.GET("/search", searchHandler.Search)
 	protected.GET("/system/status", handlers.SystemHandler{DB: db}.Status)
 	protected.GET("/automations/catalog", automationHandler.Catalog)
+	protected.GET("/automations/templates", automationHandler.Templates)
+	protected.POST("/automations/templates/:key", automationHandler.AddTemplate)
 	protected.GET("/automations/runs", automationHandler.ListRuns)
 	protected.GET("/automations/runs/:id", automationHandler.GetRun)
 	protected.POST("/automations/runs/:id/retry", automationHandler.RetryRun)

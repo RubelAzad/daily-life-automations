@@ -52,6 +52,10 @@ type Tool struct {
 type prepared struct {
 	summary string
 	run     func(ctx context.Context) (any, error)
+	// input, when set, replaces the call's input in the audit log and is
+	// what an approval runs: a tool that chooses something (such as a time)
+	// records its choice, so the user approves exactly what was shown.
+	input json.RawMessage
 }
 
 // InputError is bad tool input from the model (as opposed to a service

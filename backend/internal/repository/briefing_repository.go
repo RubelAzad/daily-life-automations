@@ -66,6 +66,13 @@ func (r BriefingRepository) Latest(ctx context.Context, userID uint64, kind stri
 	return b, err
 }
 
+// SetContent replaces a briefing's content, e.g. when a task in today's
+// plan is moved.
+func (r BriefingRepository) SetContent(ctx context.Context, userID, id uint64, content json.RawMessage) error {
+	_, err := r.DB.ExecContext(ctx, `UPDATE ai_briefings SET content = ? WHERE id = ? AND user_id = ?`, string(content), id, userID)
+	return err
+}
+
 // List returns briefings newest first.
 func (r BriefingRepository) List(ctx context.Context, userID uint64, limit, offset int) ([]models.Briefing, int, error) {
 	var total int

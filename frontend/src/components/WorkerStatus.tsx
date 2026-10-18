@@ -9,6 +9,7 @@ const JOB_LABELS: Record<string, string> = {
   "briefings.run": "Scheduled briefings",
   "search.index": "Search indexing",
   "automation.scan_overdue": "Overdue-task check for automations",
+  "approvals.expire": "Expiring old approval requests",
   "scheduler.prune": "Clean-up of old jobs",
 };
 

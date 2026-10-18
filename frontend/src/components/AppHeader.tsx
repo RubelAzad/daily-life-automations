@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { logout, type User } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { APPROVALS_CHANGED, getApprovalCount, logout, type User } from "@/lib/api";
 import NotificationBell from "./NotificationBell";
 
 const NAV = [
@@ -13,12 +14,39 @@ const NAV = [
   { href: "/notes", label: "Notes" },
   { href: "/reminders", label: "Reminders" },
   { href: "/automations", label: "Automations" },
+  { href: "/approvals", label: "Approvals" },
   { href: "/ai", label: "AI" },
 ];
+
+const POLL_MS = 30_000;
+
+/** The number of requests waiting for approval: polled, and refreshed at once after a decision. */
+function usePendingApprovals() {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      getApprovalCount()
+        .then((n) => {
+          if (!cancelled) setCount(n);
+        })
+        .catch(() => {}); // best-effort, like the bell
+    load();
+    const id = setInterval(load, POLL_MS);
+    window.addEventListener(APPROVALS_CHANGED, load);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      window.removeEventListener(APPROVALS_CHANGED, load);
+    };
+  }, []);
+  return count;
+}
 
 export default function AppHeader({ user }: { user: User }) {
   const router = useRouter();
   const pathname = usePathname();
+  const pending = usePendingApprovals();
 
   async function onLogout() {
     await logout();
@@ -27,11 +55,11 @@ export default function AppHeader({ user }: { user: User }) {
 
   return (
     <header className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-5">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
         <Link href="/" className="text-lg font-semibold tracking-tight">
           LifeOS AI
         </Link>
-        <nav className="flex gap-1 text-sm" aria-label="Main">
+        <nav className="flex flex-wrap gap-1 text-sm" aria-label="Main">
           {NAV.map((item) => (
             <Link
               key={item.href}
@@ -40,6 +68,14 @@ export default function AppHeader({ user }: { user: User }) {
               className="rounded-md px-2.5 py-1.5 text-zinc-600 hover:text-zinc-900 aria-[current=page]:bg-zinc-100 aria-[current=page]:font-medium aria-[current=page]:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 dark:aria-[current=page]:bg-zinc-800 dark:aria-[current=page]:text-zinc-100"
             >
               {item.label}
+              {item.href === "/approvals" && pending > 0 && (
+                <span
+                  aria-label={`${pending} waiting`}
+                  className="ml-1.5 rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] leading-none font-semibold text-white"
+                >
+                  {pending > 99 ? "99+" : pending}
+                </span>
+              )}
             </Link>
           ))}
         </nav>

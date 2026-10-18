@@ -21,19 +21,26 @@ type AIActionFilter struct {
 	Kind           string
 	ConversationID *uint64
 	AutomationID   *uint64
-	Limit          int
-	Offset         int
+	// CreatedAfter leaves out older entries (pending ones past their expiry).
+	CreatedAfter *time.Time
+	// Decided keeps only tool calls the user approved or rejected, or that
+	// expired, newest decision first.
+	Decided bool
+	// OldestFirst orders by creation, oldest first.
+	OldestFirst bool
+	Limit       int
+	Offset      int
 }
 
-const aiActionColumns = `id, user_id, kind, source, conversation_id, automation_id, idempotency_key, tool, risk, summary, input, pending_input, output, status, error,
+const aiActionColumns = `id, user_id, kind, source, conversation_id, automation_id, workflow_run_id, idempotency_key, tool, risk, summary, input, pending_input, output, status, error,
 	model, input_tokens, output_tokens, duration_ms, decided_at, executed_at, created_at, updated_at`
 
 func (r AIActionRepository) Create(ctx context.Context, a models.AIAction) (uint64, error) {
 	res, err := r.DB.ExecContext(ctx,
-		`INSERT INTO ai_actions (user_id, kind, source, conversation_id, automation_id, idempotency_key, tool, risk, summary, input, pending_input, output, status, error,
+		`INSERT INTO ai_actions (user_id, kind, source, conversation_id, automation_id, workflow_run_id, idempotency_key, tool, risk, summary, input, pending_input, output, status, error,
 		                         model, input_tokens, output_tokens, duration_ms, decided_at, executed_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.UserID, a.Kind, a.Source, a.ConversationID, a.AutomationID, a.IdempotencyKey, a.Tool, a.Risk, a.Summary, jsonArg(a.Input), jsonArg(a.PendingInput), jsonArg(a.Output),
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.UserID, a.Kind, a.Source, a.ConversationID, a.AutomationID, a.WorkflowRunID, a.IdempotencyKey, a.Tool, a.Risk, a.Summary, jsonArg(a.Input), jsonArg(a.PendingInput), jsonArg(a.Output),
 		a.Status, a.Error, a.Model, a.InputTokens, a.OutputTokens, a.DurationMS, utcPtr(a.DecidedAt), utcPtr(a.ExecutedAt))
 	if err != nil {
 		return 0, err
@@ -92,6 +99,18 @@ func (r AIActionRepository) List(ctx context.Context, userID uint64, f AIActionF
 		where = append(where, "automation_id = ?")
 		args = append(args, *f.AutomationID)
 	}
+	if f.CreatedAfter != nil {
+		where = append(where, "created_at >= ?")
+		args = append(args, f.CreatedAfter.UTC())
+	}
+	order := "id DESC"
+	switch {
+	case f.Decided:
+		where = append(where, "kind = 'tool' AND decided_at IS NOT NULL")
+		order = "decided_at DESC, id DESC"
+	case f.OldestFirst:
+		order = "id"
+	}
 	whereSQL := strings.Join(where, " AND ")
 
 	var total int
@@ -99,7 +118,7 @@ func (r AIActionRepository) List(ctx context.Context, userID uint64, f AIActionF
 		return nil, 0, err
 	}
 	rows, err := r.DB.QueryContext(ctx,
-		`SELECT `+aiActionColumns+` FROM ai_actions WHERE `+whereSQL+` ORDER BY id DESC LIMIT ? OFFSET ?`,
+		`SELECT `+aiActionColumns+` FROM ai_actions WHERE `+whereSQL+` ORDER BY `+order+` LIMIT ? OFFSET ?`,
 		append(args, f.Limit, f.Offset)...)
 	if err != nil {
 		return nil, 0, err
@@ -114,6 +133,37 @@ func (r AIActionRepository) List(ctx context.Context, userID uint64, f AIActionF
 		out = append(out, a)
 	}
 	return out, total, rows.Err()
+}
+
+// CountPending counts a user's tool calls waiting for approval that were
+// proposed at or after notBefore (older ones have expired).
+func (r AIActionRepository) CountPending(ctx context.Context, userID uint64, notBefore time.Time) (int, error) {
+	var n int
+	err := r.DB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM ai_actions WHERE user_id = ? AND status = 'pending_approval' AND created_at >= ?`,
+		userID, notBefore.UTC()).Scan(&n)
+	return n, err
+}
+
+// ListStale returns up to limit actions, of any user, still waiting for
+// approval though proposed before cutoff: they have expired.
+func (r AIActionRepository) ListStale(ctx context.Context, cutoff time.Time, limit int) ([]models.AIAction, error) {
+	rows, err := r.DB.QueryContext(ctx,
+		`SELECT `+aiActionColumns+` FROM ai_actions WHERE status = 'pending_approval' AND created_at < ? ORDER BY created_at LIMIT ?`,
+		cutoff.UTC(), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []models.AIAction{}
+	for rows.Next() {
+		a, err := scanAIAction(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
 }
 
 // ClaimPending atomically moves a pending action created at or after
@@ -182,7 +232,7 @@ func scanAIAction(row rowScanner) (models.AIAction, error) {
 		a                      models.AIAction
 		input, pending, output []byte
 	)
-	err := row.Scan(&a.ID, &a.UserID, &a.Kind, &a.Source, &a.ConversationID, &a.AutomationID, &a.IdempotencyKey, &a.Tool, &a.Risk, &a.Summary, &input, &pending, &output, &a.Status, &a.Error,
+	err := row.Scan(&a.ID, &a.UserID, &a.Kind, &a.Source, &a.ConversationID, &a.AutomationID, &a.WorkflowRunID, &a.IdempotencyKey, &a.Tool, &a.Risk, &a.Summary, &input, &pending, &output, &a.Status, &a.Error,
 		&a.Model, &a.InputTokens, &a.OutputTokens, &a.DurationMS, &a.DecidedAt, &a.ExecutedAt, &a.CreatedAt, &a.UpdatedAt)
 	a.Input, a.PendingInput, a.Output = rawJSON(input), rawJSON(pending), rawJSON(output)
 	return a, err

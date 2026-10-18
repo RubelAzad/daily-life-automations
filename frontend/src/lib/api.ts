@@ -656,6 +656,8 @@ export type AIAction = {
   conversation_id: number | null;
   /** The automation that took this action, if any. */
   automation_id: number | null;
+  /** The automation run that took it, if any. */
+  workflow_run_id: number | null;
   tool: string | null;
   risk: AIRisk | null;
   summary: string | null;
@@ -699,6 +701,51 @@ export async function approveAIAction(id: number) {
 export async function rejectAIAction(id: number) {
   return (await request<{ data: AIAction }>(`/ai/actions/${id}/reject`, { method: "POST" })).data;
 }
+
+// ---- Approvals inbox -------------------------------------------------------
+
+/** An action with where it came from: an automation run or a chat. */
+export type Approval = AIAction & {
+  automation: { id: number; name: string } | null;
+  run: { id: number; trigger_summary: string | null; status: RunStatus } | null;
+  conversation: { id: number; name: string } | null;
+};
+
+export type ApprovalResult = { id: number; ok: boolean; error?: string; action?: Approval };
+
+/** Requests waiting for the user, the soonest to expire first. */
+export function listApprovals(params: { page?: number; per_page?: number } = {}) {
+  const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]));
+  return request<{ data: Approval[]; meta: PageMeta }>(`/approvals?${q}`);
+}
+
+/** Approved, declined and expired requests, the latest decision first. */
+export function listApprovalHistory(params: { page?: number; per_page?: number } = {}) {
+  const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]));
+  return request<{ data: Approval[]; meta: PageMeta }>(`/approvals/history?${q}`);
+}
+
+export async function getApprovalCount() {
+  return (await request<{ data: { pending: number } }>("/approvals/count")).data.pending;
+}
+
+/** Approves (runs) or rejects one request. */
+export async function decideApproval(id: number, approve: boolean) {
+  return (await request<{ data: Approval }>(`/approvals/${id}/${approve ? "approve" : "reject"}`, { method: "POST" })).data;
+}
+
+/** Approves or rejects up to 50 requests; each one's outcome is in its result. */
+export async function decideApprovals(ids: number[], approve: boolean) {
+  return (
+    await request<{ data: ApprovalResult[] }>("/approvals/decide", {
+      method: "POST",
+      body: JSON.stringify({ ids, decision: approve ? "approve" : "reject" }),
+    })
+  ).data;
+}
+
+/** Fired on window after a decision, so the menu badge updates at once. */
+export const APPROVALS_CHANGED = "lifeos:approvals-changed";
 
 // ---- Chat ------------------------------------------------------------------
 
@@ -839,6 +886,8 @@ export type RunStatus = "running" | "succeeded" | "waiting_approval" | "retrying
 
 export type Automation = {
   id: number;
+  /** The built-in workflow it was added from, if any. */
+  template_key: string | null;
   name: string;
   enabled: boolean;
   trigger: Trigger;
@@ -882,6 +931,27 @@ export type WorkflowRun = {
 
 export async function getAutomationCatalog() {
   return (await request<{ data: AutomationCatalog }>("/automations/catalog")).data;
+}
+
+/** A built-in workflow: a ready-made automation added with one click. */
+export type AutomationTemplate = {
+  key: string;
+  name: string;
+  description: string;
+  approval: string;
+  needs_ai: boolean;
+  automation: AutomationInput;
+  /** The user's automation made from it, once added. */
+  automation_id: number | null;
+};
+
+export async function listAutomationTemplates() {
+  return (await request<{ data: AutomationTemplate[] }>("/automations/templates")).data;
+}
+
+/** Adds a built-in workflow as one of the user's automations (409 if it already is). */
+export async function addAutomationTemplate(key: string) {
+  return (await request<{ data: Automation }>(`/automations/templates/${key}`, { method: "POST" })).data;
 }
 
 export async function listAutomations() {

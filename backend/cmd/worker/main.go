@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"lifeos-ai/backend/internal/ai"
+	"lifeos-ai/backend/internal/approvals"
 	"lifeos-ai/backend/internal/automation"
 	"lifeos-ai/backend/internal/config"
 	"lifeos-ai/backend/internal/database"
@@ -64,6 +65,8 @@ func main() {
 		},
 		Reminders:     services.ReminderService{Reminders: reminderRepo, Tasks: tasks, Events: calEvents, Notes: notes},
 		Notifications: repository.NotificationRepository{DB: db},
+		Settings:      repository.SettingsRepository{DB: db},
+		Briefings:     repository.BriefingRepository{DB: db},
 	}
 	aiService := ai.NewService(
 		ai.NewClient(cfg.AI.Provider, cfg.AI.APIKey, cfg.AI.Model, cfg.AI.BaseURL, cfg.AI.MaxTokens, cfg.AI.Timeout),
@@ -88,11 +91,17 @@ func main() {
 	}
 	sched := scheduler.New(db, logger)
 	jobs.Register(sched)
-	automationTools := ai.AutomationTools(deps)
-	workflow.Engine{
+	// plan_day writes briefings with the same briefer as the scheduled ones.
+	automationDeps := deps
+	automationDeps.Planner = jobs.Briefer
+	automationTools := ai.AutomationTools(automationDeps)
+	engine := workflow.Engine{
 		DB: db, Settings: repository.SettingsRepository{DB: db}, Events: bus, Log: logger,
 		Executor: ai.Executor{Tools: automationTools, Actions: repository.AIActionRepository{DB: db}, Settings: repository.SettingsRepository{DB: db}, Log: logger},
-	}.Register(sched, interval)
+	}
+	engine.Register(sched, interval)
+	// Expiring only marks requests; it never runs a tool.
+	approvals.Service{DB: db, Executor: engine.Executor, Engine: engine, Log: logger}.Register(sched, interval)
 	if !aiService.Status().Enabled {
 		logger.Printf("AI disabled: scheduled briefings are off")
 	}

@@ -64,6 +64,7 @@ type fixture struct {
 	clock    *clock
 	tasks    services.TaskService
 	notes    services.NoteService
+	calendar services.CalendarService
 	service  Service
 	engine   Engine
 	sched    *scheduler.Scheduler
@@ -120,9 +121,11 @@ func newFixture(t *testing.T, approvalMode string) fixture {
 	taskRepo, reminders, notesRepo := repository.TaskRepository{DB: testDB}, repository.ReminderRepository{DB: testDB}, repository.NoteRepository{DB: testDB}
 	tasks := services.TaskService{Tasks: taskRepo, Lists: repository.TaskListRepository{DB: testDB}, Projects: repository.ProjectRepository{DB: testDB}, Events: bus}
 	notes := services.NoteService{Notes: notesRepo, Files: repository.FileRepository{DB: testDB}, Projects: repository.ProjectRepository{DB: testDB}, Reminders: reminders, Events: bus}
+	calendar := services.CalendarService{Events: repository.CalendarEventRepository{DB: testDB}, Reminders: reminders}
 	tools := ai.AutomationTools(ai.Deps{
-		Tasks: tasks, Notes: notes, Notifications: repository.NotificationRepository{DB: testDB},
+		Tasks: tasks, Notes: notes, Notifications: repository.NotificationRepository{DB: testDB}, Calendar: calendar,
 		Reminders: services.ReminderService{Reminders: reminders, Tasks: taskRepo, Events: repository.CalendarEventRepository{DB: testDB}, Notes: notesRepo},
+		Settings:  settings, Briefings: repository.BriefingRepository{DB: testDB},
 	})
 	engine := Engine{
 		DB: testDB, Settings: settings, Events: bus, Now: c.Now,
@@ -133,7 +136,7 @@ func newFixture(t *testing.T, approvalMode string) fixture {
 	sched.Handle(JobRun, engine.runJob)
 	sched.Handle(JobRetry, engine.retryJob)
 	return fixture{
-		ctx: ctx, user: user.ID, clock: c, tasks: tasks, notes: notes, settings: settings, engine: engine, sched: sched,
+		ctx: ctx, user: user.ID, clock: c, tasks: tasks, notes: notes, calendar: calendar, settings: settings, engine: engine, sched: sched,
 		service: Service{DB: testDB, Settings: settings, Tools: tools, Now: c.Now},
 	}
 }

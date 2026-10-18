@@ -4,18 +4,16 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import AppHeader, { ErrorBanner } from "@/components/AppHeader";
 import {
-  approveAIAction,
   getAIStatus,
   listAIActions,
   pingAI,
-  rejectAIAction,
   type AIAction,
   type AIRisk,
   type AIStatus,
   type PageMeta,
 } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
-import { formatDue, timeAgo } from "@/lib/format";
+import { timeAgo } from "@/lib/format";
 import { useRequireUser } from "@/lib/useRequireUser";
 
 const FILTERS = [
@@ -44,7 +42,7 @@ const STATUS_STYLE: Record<AIAction["status"], string> = {
 export default function AIView() {
   const { user, error: authError } = useRequireUser();
   const [status, setStatus] = useState<AIStatus | null>(null);
-  const [pending, setPending] = useState<AIAction[]>([]);
+  const [pending, setPending] = useState(0);
   const [history, setHistory] = useState<AIAction[] | null>(null);
   const [meta, setMeta] = useState<PageMeta | null>(null);
   const [filter, setFilter] = useState("");
@@ -65,12 +63,12 @@ export default function AIView() {
     if (!user) return;
     let cancelled = false;
     Promise.all([
-      listAIActions({ status: "pending_approval", per_page: 100 }),
+      listAIActions({ status: "pending_approval", kind: "tool", per_page: 1 }),
       listAIActions({ status: filter || "succeeded,failed,rejected,expired,running", page, per_page: 25 }),
     ])
       .then(([p, h]) => {
         if (cancelled) return;
-        setPending(p.data);
+        setPending(p.meta.total);
         setHistory(h.data);
         setMeta(h.meta);
       })
@@ -79,19 +77,6 @@ export default function AIView() {
       cancelled = true;
     };
   }, [user, filter, page, version, showError]);
-
-  async function decide(action: AIAction, approve: boolean) {
-    setBusy(true);
-    try {
-      const result = approve ? await approveAIAction(action.id) : await rejectAIAction(action.id);
-      if (result.status === "failed") setError(`Couldn't do it: ${result.error ?? "unknown error"}`);
-    } catch (err) {
-      showError(err);
-    } finally {
-      setBusy(false);
-      setVersion((v) => v + 1);
-    }
-  }
 
   async function onPing() {
     setBusy(true);
@@ -126,7 +111,11 @@ export default function AIView() {
           </Link>
         </div>
         <p className="text-sm text-zinc-500">
-          Everything the assistant does is listed here. It can only use the actions below, and changes wait for your approval as set in{" "}
+          Everything the assistant and your automations do is listed here. They can only use the actions below, and changes wait in{" "}
+          <Link href="/approvals" className="underline">
+            Approvals
+          </Link>{" "}
+          as set in{" "}
           <Link href="/settings" className="underline">
             Settings
           </Link>
@@ -166,45 +155,14 @@ export default function AIView() {
         </div>
       </section>
 
-      <section className={`${section} ${pending.length ? "border-amber-300 dark:border-amber-800" : ""}`} aria-label="Waiting for approval">
-        <div className={header}>
-          <h2 className="text-sm font-medium">Waiting for your approval ({pending.length})</h2>
-        </div>
-        {pending.length === 0 ? (
-          <p className="px-3 py-4 text-sm text-zinc-500">Nothing to approve.</p>
-        ) : (
-          <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
-            {pending.map((a) => (
-              <li key={a.id} className="flex flex-col gap-2 px-3 py-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  {a.risk && <RiskBadge risk={a.risk} />}
-                  <span className="text-sm font-medium wrap-break-word">{a.summary ?? a.tool}</span>
-                  {a.automation_id && (
-                    <Link href="/automations" className="text-xs text-zinc-500 underline">
-                      from an automation
-                    </Link>
-                  )}
-                </div>
-                <Details action={a} />
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => decide(a, true)}
-                    className="rounded-md bg-zinc-900 px-3 py-1 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
-                  >
-                    Approve
-                  </button>
-                  <button type="button" disabled={busy} onClick={() => decide(a, false)} className={button}>
-                    Reject
-                  </button>
-                  {a.expires_at && <span className="text-xs text-zinc-500">Expires {formatDue(a.expires_at).toLowerCase()}</span>}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {pending > 0 && (
+        <p className="rounded-md border border-amber-300 px-3 py-2 text-sm dark:border-amber-800">
+          {pending === 1 ? "1 action is" : `${pending} actions are`} waiting for your approval.{" "}
+          <Link href="/approvals" className="font-medium underline">
+            Review in Approvals
+          </Link>
+        </p>
+      )}
 
       <section className={section} aria-label="Activity">
         <div className={header}>

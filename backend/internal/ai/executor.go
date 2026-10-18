@@ -39,6 +39,7 @@ type Origin struct {
 	Source         string // chat | automation | test
 	ConversationID *uint64
 	AutomationID   *uint64
+	RunID          *uint64 // the automation run
 	// Key makes the call idempotent: if an action was already recorded under
 	// it (a retried automation run), its result is returned and nothing runs.
 	Key string
@@ -79,7 +80,7 @@ func (e Executor) Propose(ctx context.Context, userID uint64, origin Origin, nam
 	}
 	action := models.AIAction{
 		UserID: userID, Kind: models.AIActionTool, Source: origin.Source, ConversationID: origin.ConversationID,
-		AutomationID: origin.AutomationID, Tool: strPtr(truncateRunes(name, 64)), Input: RedactJSON(input),
+		AutomationID: origin.AutomationID, WorkflowRunID: origin.RunID, Tool: strPtr(truncateRunes(name, 64)), Input: RedactJSON(input),
 	}
 	if origin.Key != "" {
 		action.IdempotencyKey = &origin.Key
@@ -98,6 +99,9 @@ func (e Executor) Propose(ctx context.Context, userID uint64, origin Origin, nam
 		return e.record(ctx, action, nil)
 	}
 	action.Summary = strPtr(truncateRunes(prep.summary, 500))
+	if len(prep.input) > 0 {
+		input, action.Input = prep.input, RedactJSON(prep.input)
+	}
 
 	settings, err := e.Settings.Get(ctx, userID)
 	if err != nil {

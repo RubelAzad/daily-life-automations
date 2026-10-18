@@ -142,6 +142,37 @@ func (b Briefer) Generate(ctx context.Context, userID uint64, kind string, sched
 	return br, nil
 }
 
+// PlanToday makes today's plan (a morning briefing) for an automation and
+// sends its notification. Without refresh, a plan already made today is
+// reused, so a daily automation and the Settings briefing share one plan
+// (and one model call). With refresh, a new one is written (rate-limited
+// like the "Plan my day" button).
+func (b Briefer) PlanToday(ctx context.Context, userID uint64, refresh bool) (models.Briefing, error) {
+	if !refresh {
+		settings, err := b.AI.Executor.Settings.Get(ctx, userID)
+		if err != nil {
+			return models.Briefing{}, err
+		}
+		br, err := b.Briefings.Latest(ctx, userID, models.BriefingMorning, localDate(b.now(), settings.Location()))
+		if err == nil && br.Status == models.BriefingReady {
+			return br, b.notify(ctx, br)
+		}
+		if err != nil && !errors.Is(err, repository.ErrNotFound) {
+			return br, err
+		}
+	}
+	// The day's scheduled slot first; if it is taken (made earlier, or it
+	// failed), an on-demand one.
+	br, err := b.Generate(ctx, userID, models.BriefingMorning, !refresh)
+	if errors.Is(err, ErrAlreadyGenerated) {
+		br, err = b.Generate(ctx, userID, models.BriefingMorning, false)
+	}
+	if err != nil {
+		return br, err
+	}
+	return br, b.notify(ctx, br)
+}
+
 func (b Briefer) notify(ctx context.Context, br models.Briefing) error {
 	title := "Your morning briefing is ready"
 	if br.Kind == models.BriefingEvening {

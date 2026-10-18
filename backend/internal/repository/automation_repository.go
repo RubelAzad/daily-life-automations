@@ -14,7 +14,7 @@ type AutomationRepository struct {
 	DB DBTX
 }
 
-const automationColumns = `id, user_id, name, enabled, trigger_type, trigger_config, conditions, actions,
+const automationColumns = `id, user_id, template_key, name, enabled, trigger_type, trigger_config, conditions, actions,
 	next_run_at, last_run_at, last_status, last_error, run_count, created_at, updated_at`
 
 func (r AutomationRepository) Create(ctx context.Context, a models.Automation) (uint64, error) {
@@ -23,9 +23,12 @@ func (r AutomationRepository) Create(ctx context.Context, a models.Automation) (
 		return 0, err
 	}
 	res, err := r.DB.ExecContext(ctx,
-		`INSERT INTO automations (user_id, name, enabled, trigger_type, trigger_config, conditions, actions, next_run_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.UserID, a.Name, a.Enabled, a.Trigger.Type, schedule, conditions, actions, utcPtr(a.NextRunAt))
+		`INSERT INTO automations (user_id, template_key, name, enabled, trigger_type, trigger_config, conditions, actions, next_run_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.UserID, a.TemplateKey, a.Name, a.Enabled, a.Trigger.Type, schedule, conditions, actions, utcPtr(a.NextRunAt))
+	if isDuplicate(err) {
+		return 0, ErrDuplicate
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -143,6 +146,16 @@ func (r AutomationRepository) RecordRun(ctx context.Context, id uint64, at time.
 	return err
 }
 
+// SetStatusIfLatest updates an automation's last status when runID is its
+// latest run, e.g. once the steps it was waiting on are approved.
+func (r AutomationRepository) SetStatusIfLatest(ctx context.Context, id, runID uint64, status string, errMsg *string) error {
+	_, err := r.DB.ExecContext(ctx,
+		`UPDATE automations SET last_status = ?, last_error = ?, updated_at = updated_at
+		  WHERE id = ? AND NOT EXISTS (SELECT 1 FROM workflow_runs WHERE automation_id = ? AND id > ?)`,
+		status, errMsg, id, id, runID)
+	return err
+}
+
 func (r AutomationRepository) query(ctx context.Context, q string, args ...any) ([]models.Automation, error) {
 	rows, err := r.DB.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -165,7 +178,7 @@ func scanAutomation(row rowScanner) (models.Automation, error) {
 		a                             models.Automation
 		schedule, conditions, actions []byte
 	)
-	err := row.Scan(&a.ID, &a.UserID, &a.Name, &a.Enabled, &a.Trigger.Type, &schedule, &conditions, &actions,
+	err := row.Scan(&a.ID, &a.UserID, &a.TemplateKey, &a.Name, &a.Enabled, &a.Trigger.Type, &schedule, &conditions, &actions,
 		&a.NextRunAt, &a.LastRunAt, &a.LastStatus, &a.LastError, &a.RunCount, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return a, err

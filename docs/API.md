@@ -58,10 +58,10 @@ The model can only use the tools in the allowlist below, with input decoded stri
 |---|---|---|
 | GET | `/ai/status` | `{enabled, provider, model, reason, tools: [{name, description, risk}]}`. `reason` explains why AI is off. The API key is never returned. |
 | POST | `/ai/ping` | Tiny model call to check the key and connection: `{reply, model, duration_ms, input_tokens, output_tokens, action_id}`. `503` when AI is off, `429` within 10 s of the last ping, `502` with the provider's message if the call fails (e.g. invalid key). |
-| GET | `/ai/actions` | The audit log, newest first. Query: `status` (comma-separated), `kind` (`tool`, `llm_call`), `conversation_id`, `automation_id`, `page`, `per_page` (≤ 100). Entries have `source` (`chat`, `automation`, …) and `automation_id`. |
+| GET | `/ai/actions` | The audit log, newest first. Query: `status` (comma-separated), `kind` (`tool`, `llm_call`), `conversation_id`, `automation_id`, `page`, `per_page` (≤ 100). Entries have `source` (`chat`, `automation`, …), `automation_id` and `workflow_run_id`. |
 | GET | `/ai/actions/:id` | One entry |
-| POST | `/ai/actions/:id/approve` | Runs a pending action once. Returns the entry with its final `status` (`succeeded`/`failed`), `output` and `error`. `409` if it isn't pending or has expired. |
-| POST | `/ai/actions/:id/reject` | Discards a pending action. `409` if it isn't pending. |
+| POST | `/ai/actions/:id/approve` | Same as [`/approvals/:id/approve`](#approvals). |
+| POST | `/ai/actions/:id/reject` | Same as [`/approvals/:id/reject`](#approvals). |
 
 ### Chat
 
@@ -130,7 +130,7 @@ A morning plan and an evening wrap-up, written by the model from the user's day.
 | Risk | Tools | Needs approval |
 |---|---|---|
 | `read` | `get_today`, `list_tasks`, `list_events`, `search_notes`, `search_documents` | Never |
-| `low` | `create_task`, `complete_task`, `reschedule_task`, `carry_forward_tasks`, `create_event`, `create_note`, `create_reminder` | When `ai_approval_mode` is `always` (the default) |
+| `low` | `create_task`, `complete_task`, `reschedule_task`, `recover_task`, `carry_forward_tasks`, `create_event`, `create_note`, `create_reminder` | When `ai_approval_mode` is `always` (the default) |
 | `high` | `delete_task` | Always. Sending, spending, deleting and booking can never skip approval. |
 
 **Audit log entries** (`kind`):
@@ -148,6 +148,8 @@ Module 18: **when** a trigger fires, **if** the conditions hold, **then** run th
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/automations/catalog` | `{triggers: [{type, label, description, fields, placeholders, run_now}], actions: [{type, label, description}], operators: {text, choice, tags, date}}`, for building the editor. |
+| GET | `/automations/templates` | The [built-in workflows](#built-in-workflows): `[{key, name, description, approval, needs_ai, automation, automation_id}]`. `automation_id` is set once the user added it. |
+| POST | `/automations/templates/:key` | Adds a built-in workflow as one of the user's automations: `201` with it (`template_key` set). `409` if it is already added, `404` for an unknown key. |
 | GET | `/automations` | The user's automations, by name. |
 | POST | `/automations` | `name` (1–100), `trigger`, `conditions` (optional), `actions`, `enabled` (default `true`). `422` with `fields` keyed like `trigger.schedule.time`, `conditions[0]`, `actions[1]`. At most 50 per user. |
 | GET | `/automations/:id` | One automation |
@@ -171,12 +173,23 @@ Module 18: **when** a trigger fires, **if** the conditions hold, **then** run th
 
 **Conditions:** `[{field, op, value}]`, all must hold, at most 10. Operators by field type: text `equals`, `not_equals`, `contains`, `not_contains`, `is_set`, `is_not_set` (case-insensitive); choice (`priority`, `kind`) `equals`, `not_equals`, `in`, `not_in` (value is a list); tags `contains`, `not_contains`, `is_set`, `is_not_set`; dates `is_set`, `is_not_set`. Conditions see the task or note as it was when the event happened.
 
-**Actions:** `[{type, input}]`, 1–5, run in order; a failed step stops the run. `type` is one of `notify` (`title`, `body`, `link`: an app path like `/tasks`), `create_task`, `complete_task`, `reschedule_task`, `create_note`, `create_reminder`, with the same input as the assistant's tools. Nothing that deletes, sends or spends.
+**Actions:** `[{type, input}]`, 1–5, run in order; a failed step stops the run. `type` is one of `notify` (`title`, `body`, `link`: an app path like `/tasks`), `create_task`, `complete_task`, `reschedule_task`, `recover_task`, `create_note`, `create_reminder`, `plan_day`, with the same input as the assistant's tools. Nothing that deletes, sends or spends.
+- **`recover_task`** (`task_id`, `minutes` 15–240, default 30): moves the task to the first free slot of that length, starting on the quarter hour: after busy timed events (and their prep time) and other open tasks (each taken to occupy the 30 minutes before its due time), outside quiet hours, within 7 days. Urgent, high and medium tasks search from now, low-priority ones from tomorrow. The due time becomes the slot's end. The chosen start is recorded with the action as `at`, so the approval request shows the time and approving moves the task there (it fails if that time has passed, or the task was completed meanwhile). If today's plan exists, the task's block moves with it. No model call.
+- **`plan_day`** (`refresh`, default `false`): writes today's plan (the [morning briefing](#briefings)) and sends its notification. It reuses a plan already made today, so the Settings briefing and an automation share one plan and one model call; `refresh: true` writes a new one. Never needs approval. Fails without retrying when the AI assistant is off.
 - **Placeholders** in strings: `{{automation.name}}`, `{{today}}` (local `YYYY-MM-DD`), `{{now}}`, and for task triggers `{{task.id}}`, `{{task.title}}`, `{{task.priority}}`, `{{task.status}}`, `{{task.list}}`, `{{task.project}}`, `{{task.due}}` (local, readable), for notes `{{note.id}}`, `{{note.title}}`, `{{note.kind}}`, `{{note.url}}`, `{{note.tags}}`, for `workflow.failed` `{{run.id}}`, `{{run.automation}}`, `{{run.error}}`. `"task_id": "{{task.id}}"` becomes the number. A placeholder the trigger doesn't have is a `422`.
 - **Relative times** in `due_at` and `remind_at`: `+30m`, `+2h`, `+1d`, `+1d 09:00`, `today 17:00`, `tomorrow 09:00` (local), or RFC 3339.
 - **Checked on save:** each action is decoded strictly against its tool's schema with sample values, so a broken action is a `422`, not a failed run later.
 
-**Approval:** actions follow `ai_approval_mode`. With `always` (the default), changes wait on the AI activity page and the user gets a notification ("… is waiting for your approval"); the run's status is `waiting_approval`. `notify` never needs approval.
+**Approval:** actions follow `ai_approval_mode`. With `always` (the default), changes wait in [Approvals](#approvals) and the user gets a notification ("… is waiting for your approval"); the run's status is `waiting_approval`. `notify` and `plan_day` never need approval.
+
+### Built-in workflows
+
+Ready-made automations, added with `POST /automations/templates/:key`. Once added they are ordinary automations: edit, turn off or delete them (and add them again).
+
+| Key | Name | Trigger | Actions | Approval |
+|---|---|---|---|---|
+| `daily_planning` | Plan my day | Every day at 07:00 | `plan_day` | None (reads the day, sends a notification). Needs the AI assistant. |
+| `missed_task_recovery` | Recover missed tasks | `task.overdue` | `recover_task` with `task_id: {{task.id}}` | The user's setting; with `always` each move waits in Approvals |
 
 ### Runs
 
@@ -194,7 +207,7 @@ Every run is recorded (a run whose conditions don't hold isn't: nothing happened
 - **Automatic:** a step that fails unexpectedly (an internal error) is retried after 1 minute, then 5 (3 attempts in all), as `retrying`. Failures caused by the input (invalid input, a task that doesn't exist) aren't retried: retrying wouldn't help.
 - **Resumes, doesn't repeat:** a retry continues from the step that failed. Steps that already succeeded, or are waiting for approval, aren't run again.
 - **When a run fails for good:** the user gets a notification linking to the run (`/automations?run=<id>`), and `workflow.failed` fires for other automations.
-- **Approvals:** steps waiting for approval show the user's decision when the run is read: approved steps become `succeeded`; a declined or expired step fails the run.
+- **Approvals:** deciding on a step in the [approvals inbox](#approvals) updates its run at once: approved steps become `succeeded`; a declined or expired step fails the run. The automation's `last_status` follows if it is its latest run.
 - **Crashes:** a worker that dies mid-run leaves the run `running`; its job is picked up again and resumes the same run, skipping actions already recorded.
 
 **Safety:**
@@ -202,6 +215,24 @@ Every run is recorded (a run whose conditions don't hold isn't: nothing happened
 - **Rate limit:** an automation that would take more than 60 actions in an hour is paused for that run (`failed`, with the reason).
 - **Exactly once:** events are queued in the same transaction as the change, so they exist only if it committed; each event runs each automation once (idempotency keys), and a retried run skips the actions it already took.
 - **Isolation:** another user's automation is a `404`.
+
+## Approvals
+
+Actions from the assistant and from automations that wait for the user's decision (see `ai_approval_mode` in [Settings](#settings)). Each item is an [audit log](#ai-assistant) entry plus where it came from: `automation` (`{id, name}`, `null` if deleted), `run` (`{id, trigger_summary, status}`) and `conversation` (`{id, name}`, the chat's title).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/approvals` | Waiting requests, the soonest to expire first. Query: `page`, `per_page` (≤ 100). Each has `expires_at`. |
+| GET | `/approvals/count` | `{pending}`, for the menu badge |
+| GET | `/approvals/history` | Approved, rejected and expired requests, the latest decision first (`decided_at`). Query: `page`, `per_page`. |
+| POST | `/approvals/:id/approve` | Runs the action once and returns it with its final `status` (`succeeded`/`failed`), `output` and `error`. `409` if it isn't pending or has expired. |
+| POST | `/approvals/:id/reject` | Discards the action without running it. `409` if it isn't pending. |
+| POST | `/approvals/decide` | `{ids: [..], decision: "approve" \| "reject"}`, 1–50 IDs, decided in order. Returns `[{id, ok, error, action}]`: an action that is already decided, expired or not found has `ok: false` and doesn't stop the others. |
+
+- **Expiry:** a request expires 24 h after it was proposed. It leaves the inbox at once; the worker then marks it `expired` and fails the run waiting on it, with a notification linking to the run.
+- **Acts as the automation:** an approved action from an automation counts as that automation's change, so it doesn't trigger the same automation again, and chain limits apply.
+- **Notification:** a run that starts waiting sends one notification linking to `/approvals`.
+- **Isolation:** another user's request is a `404` (or `not found` in a bulk result).
 
 ## Settings
 
