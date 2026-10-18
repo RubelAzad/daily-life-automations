@@ -886,6 +886,8 @@ export type RunStatus = "running" | "succeeded" | "waiting_approval" | "retrying
 
 export type Automation = {
   id: number;
+  /** The built-in workflow it was added from, if any. */
+  template_key: string | null;
   name: string;
   enabled: boolean;
   trigger: Trigger;
@@ -929,6 +931,27 @@ export type WorkflowRun = {
 
 export async function getAutomationCatalog() {
   return (await request<{ data: AutomationCatalog }>("/automations/catalog")).data;
+}
+
+/** A built-in workflow: a ready-made automation added with one click. */
+export type AutomationTemplate = {
+  key: string;
+  name: string;
+  description: string;
+  approval: string;
+  needs_ai: boolean;
+  automation: AutomationInput;
+  /** The user's automation made from it, once added. */
+  automation_id: number | null;
+};
+
+export async function listAutomationTemplates() {
+  return (await request<{ data: AutomationTemplate[] }>("/automations/templates")).data;
+}
+
+/** Adds a built-in workflow as one of the user's automations (409 if it already is). */
+export async function addAutomationTemplate(key: string) {
+  return (await request<{ data: Automation }>(`/automations/templates/${key}`, { method: "POST" })).data;
 }
 
 export async function listAutomations() {

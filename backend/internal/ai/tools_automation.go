@@ -10,10 +10,12 @@ import (
 )
 
 // AutomationTools is the allowlist for automation actions: the routine,
-// easy-to-undo tools, plus notify. Nothing that deletes, sends or spends.
+// easy-to-undo tools, plus notify and plan_day. Nothing that deletes, sends
+// or spends.
 func AutomationTools(d Deps) *Registry {
 	return NewRegistry(
 		notifyTool(d), createTaskTool(d), completeTaskTool(d), rescheduleTaskTool(d), createNoteTool(d), createReminderTool(d),
+		recoverTaskTool(d), planDayTool(d),
 	)
 }
 

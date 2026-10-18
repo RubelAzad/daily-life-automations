@@ -58,6 +58,16 @@ const ACTION_FIELDS: Record<string, { key: string; label: string; placeholder?: 
     { key: "remind_at", label: "When", placeholder: "tomorrow 09:00, +2h" },
     { key: "note", label: "Note" },
   ],
+  recover_task: [
+    { key: "task_id", label: "Task", placeholder: "{{task.id}}" },
+    { key: "minutes", label: "Time it needs (minutes)", placeholder: "30" },
+  ],
+  plan_day: [{ key: "refresh", label: "If today already has a plan", choices: ["", "true"] }],
+};
+
+/** Labels for choice values that aren't self-explanatory. */
+const CHOICE_LABELS: Record<string, Record<string, string>> = {
+  refresh: { "": "Reuse it", true: "Write a new one" },
 };
 
 type Draft = {
@@ -93,10 +103,11 @@ function cleanInput(type: string, input: Record<string, unknown>): Record<string
   for (const [k, v] of Object.entries(input)) {
     if (typeof v === "string" && v.trim() === "") continue;
     if (k === "tags" && typeof v === "string") out[k] = v.split(",").map((t) => t.trim()).filter(Boolean);
-    else if (k === "task_id" && typeof v === "string" && /^\d+$/.test(v.trim())) out[k] = Number(v);
+    else if ((k === "task_id" || k === "minutes") && typeof v === "string" && /^\d+$/.test(v.trim())) out[k] = Number(v);
+    else if (k === "refresh") out[k] = v === true || v === "true";
     else out[k] = v;
   }
-  if ((type === "complete_task" || type === "reschedule_task") && out.task_id === undefined) out.task_id = "{{task.id}}";
+  if ((type === "complete_task" || type === "reschedule_task" || type === "recover_task") && out.task_id === undefined) out.task_id = "{{task.id}}";
   return out;
 }
 
@@ -250,7 +261,7 @@ export default function AutomationEditor({ catalog, automation, preset, onSaved,
           </p>
         )}
         <p className="text-xs text-zinc-500">
-          Actions follow your approval setting: with &ldquo;Always ask&rdquo;, changes wait on the AI activity page. Notifications never need approval.
+          Actions follow your approval setting: with &ldquo;Always ask&rdquo;, changes wait in Approvals. Notifications and day plans never need approval.
         </p>
       </Step>
 
@@ -451,7 +462,7 @@ function ActionFields({
             <select value={fieldText(action.input[f.key])} onChange={(e) => set(f.key, e.target.value)} className={control}>
               {f.choices.map((c) => (
                 <option key={c} value={c}>
-                  {c || "(default)"}
+                  {CHOICE_LABELS[f.key]?.[c] ?? (c || "(default)")}
                 </option>
               ))}
             </select>

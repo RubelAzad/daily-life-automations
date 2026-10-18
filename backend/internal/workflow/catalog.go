@@ -84,6 +84,8 @@ var Actions = []ActionSpec{
 	{Type: "reschedule_task", Label: "Reschedule the task", Description: "Moves a task's due time, e.g. due_at: \"+1d\"."},
 	{Type: "create_note", Label: "Create a note", Description: "Title, optional body, kind and tags."},
 	{Type: "create_reminder", Label: "Set a reminder", Description: "A reminder at a time, e.g. remind_at: \"tomorrow 09:00\", or for a task."},
+	{Type: "recover_task", Label: "Find a new time for the task", Description: "Moves the task (task_id: {{task.id}}) to the next free slot around your events and quiet hours; optional minutes (default 30). Today's plan is updated."},
+	{Type: "plan_day", Label: "Plan my day", Description: "The assistant plans today (focus and a suggested schedule) and sends it to you. Reuses today's plan if there is one; refresh: true writes a new one. Needs the AI assistant."},
 }
 
 func triggerSpec(t string) (TriggerSpec, bool) {

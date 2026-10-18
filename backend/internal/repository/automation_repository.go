@@ -14,7 +14,7 @@ type AutomationRepository struct {
 	DB DBTX
 }
 
-const automationColumns = `id, user_id, name, enabled, trigger_type, trigger_config, conditions, actions,
+const automationColumns = `id, user_id, template_key, name, enabled, trigger_type, trigger_config, conditions, actions,
 	next_run_at, last_run_at, last_status, last_error, run_count, created_at, updated_at`
 
 func (r AutomationRepository) Create(ctx context.Context, a models.Automation) (uint64, error) {
@@ -23,9 +23,12 @@ func (r AutomationRepository) Create(ctx context.Context, a models.Automation) (
 		return 0, err
 	}
 	res, err := r.DB.ExecContext(ctx,
-		`INSERT INTO automations (user_id, name, enabled, trigger_type, trigger_config, conditions, actions, next_run_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.UserID, a.Name, a.Enabled, a.Trigger.Type, schedule, conditions, actions, utcPtr(a.NextRunAt))
+		`INSERT INTO automations (user_id, template_key, name, enabled, trigger_type, trigger_config, conditions, actions, next_run_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.UserID, a.TemplateKey, a.Name, a.Enabled, a.Trigger.Type, schedule, conditions, actions, utcPtr(a.NextRunAt))
+	if isDuplicate(err) {
+		return 0, ErrDuplicate
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -175,7 +178,7 @@ func scanAutomation(row rowScanner) (models.Automation, error) {
 		a                             models.Automation
 		schedule, conditions, actions []byte
 	)
-	err := row.Scan(&a.ID, &a.UserID, &a.Name, &a.Enabled, &a.Trigger.Type, &schedule, &conditions, &actions,
+	err := row.Scan(&a.ID, &a.UserID, &a.TemplateKey, &a.Name, &a.Enabled, &a.Trigger.Type, &schedule, &conditions, &actions,
 		&a.NextRunAt, &a.LastRunAt, &a.LastStatus, &a.LastError, &a.RunCount, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return a, err

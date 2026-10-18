@@ -7,20 +7,22 @@ import (
 
 // Automation runs actions when its trigger fires and its conditions hold.
 type Automation struct {
-	ID         uint64      `json:"id"`
-	UserID     uint64      `json:"-"`
-	Name       string      `json:"name"`
-	Enabled    bool        `json:"enabled"`
-	Trigger    Trigger     `json:"trigger"`
-	Conditions []Condition `json:"conditions"`
-	Actions    []Action    `json:"actions"`
-	NextRunAt  *time.Time  `json:"next_run_at"`
-	LastRunAt  *time.Time  `json:"last_run_at"`
-	LastStatus *string     `json:"last_status"`
-	LastError  *string     `json:"last_error"`
-	RunCount   int         `json:"run_count"`
-	CreatedAt  time.Time   `json:"created_at"`
-	UpdatedAt  time.Time   `json:"updated_at"`
+	ID     uint64 `json:"id"`
+	UserID uint64 `json:"-"`
+	// TemplateKey names the built-in workflow it was added from, if any.
+	TemplateKey *string     `json:"template_key"`
+	Name        string      `json:"name"`
+	Enabled     bool        `json:"enabled"`
+	Trigger     Trigger     `json:"trigger"`
+	Conditions  []Condition `json:"conditions"`
+	Actions     []Action    `json:"actions"`
+	NextRunAt   *time.Time  `json:"next_run_at"`
+	LastRunAt   *time.Time  `json:"last_run_at"`
+	LastStatus  *string     `json:"last_status"`
+	LastError   *string     `json:"last_error"`
+	RunCount    int         `json:"run_count"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
 }
 
 // Trigger types.

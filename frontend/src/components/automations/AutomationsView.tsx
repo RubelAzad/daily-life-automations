@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import AppHeader, { ErrorBanner } from "@/components/AppHeader";
 import AutomationEditor from "@/components/automations/AutomationEditor";
+import BuiltinWorkflows from "@/components/automations/BuiltinWorkflows";
 import RunsPanel from "@/components/automations/RunsPanel";
 import { WorkerWarning } from "@/components/WorkerStatus";
 import {
@@ -30,7 +31,7 @@ const PRESETS: { label: string; input: AutomationInput }[] = [
   {
     label: "Weekday planning task",
     input: {
-      name: "Plan my day",
+      name: "Planning task",
       trigger: { type: "schedule", schedule: { frequency: "weekly", time: "08:00", weekdays: [1, 2, 3, 4, 5] } },
       actions: [{ type: "create_task", input: { title: "Plan the day ({{today}})", priority: "high", due_at: "today 10:00" } }],
     },
@@ -166,6 +167,21 @@ export default function AutomationsView() {
         <p role="status" className="text-sm text-green-700 dark:text-green-400">
           {notice}
         </p>
+      )}
+
+      {!editing && (
+        <BuiltinWorkflows
+          version={version}
+          onError={setError}
+          onAdded={(a) => {
+            setNotice(
+              a.trigger.type === "schedule" && a.next_run_at
+                ? `Added “${a.name}”. Next run: ${formatDue(a.next_run_at)}. Change the time with Edit.`
+                : `Added “${a.name}”. It runs when its trigger fires; edit it like any other automation.`,
+            );
+            reload();
+          }}
+        />
       )}
 
       {editing && catalog && (

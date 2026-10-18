@@ -48,6 +48,11 @@ func (s Service) Get(ctx context.Context, userID, id uint64) (models.Automation,
 }
 
 func (s Service) Create(ctx context.Context, userID uint64, in Input) (models.Automation, error) {
+	return s.create(ctx, userID, in, nil)
+}
+
+// create makes an automation, from a built-in workflow if templateKey is set.
+func (s Service) create(ctx context.Context, userID uint64, in Input, templateKey *string) (models.Automation, error) {
 	missing := map[string]string{}
 	if in.Name == nil {
 		missing["name"] = "is required"
@@ -68,7 +73,7 @@ func (s Service) Create(ctx context.Context, userID uint64, in Input) (models.Au
 	if n >= maxAutomations {
 		return models.Automation{}, &services.ValidationError{Fields: map[string]string{"name": fmt.Sprintf("you can have at most %d automations", maxAutomations)}}
 	}
-	a := models.Automation{UserID: userID, Enabled: true, Conditions: []models.Condition{}}
+	a := models.Automation{UserID: userID, TemplateKey: templateKey, Enabled: true, Conditions: []models.Condition{}}
 	apply(&a, in)
 	if err := s.validate(ctx, &a); err != nil {
 		return models.Automation{}, err

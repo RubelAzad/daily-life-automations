@@ -80,6 +80,7 @@ func main() {
 			Tools: ai.BuiltinTools(ai.Deps{
 				Tasks: taskService, Calendar: calendarService, Notes: noteHandler.Notes, Reminders: reminderHandler.Reminders,
 				Today: todayHandler.Today, Search: searchService,
+				Settings: repository.SettingsRepository{DB: db}, Briefings: repository.BriefingRepository{DB: db},
 			}),
 			Actions:  repository.AIActionRepository{DB: db},
 			Settings: repository.SettingsRepository{DB: db},
@@ -98,8 +99,9 @@ func main() {
 	// Automations run their actions through the same executor (approval
 	// policy and audit log) with a smaller tool allowlist.
 	automationTools := ai.AutomationTools(ai.Deps{
-		Tasks: taskService, Notes: noteHandler.Notes, Reminders: reminderHandler.Reminders,
+		Tasks: taskService, Calendar: calendarService, Notes: noteHandler.Notes, Reminders: reminderHandler.Reminders,
 		Notifications: repository.NotificationRepository{DB: db},
+		Settings:      repository.SettingsRepository{DB: db}, Briefings: repository.BriefingRepository{DB: db}, Planner: aiHandler.Briefer,
 	})
 	engine := workflow.Engine{
 		DB: db, Settings: repository.SettingsRepository{DB: db}, Events: bus,
@@ -206,6 +208,8 @@ func main() {
 	protected.GET("/search", searchHandler.Search)
 	protected.GET("/system/status", handlers.SystemHandler{DB: db}.Status)
 	protected.GET("/automations/catalog", automationHandler.Catalog)
+	protected.GET("/automations/templates", automationHandler.Templates)
+	protected.POST("/automations/templates/:key", automationHandler.AddTemplate)
 	protected.GET("/automations/runs", automationHandler.ListRuns)
 	protected.GET("/automations/runs/:id", automationHandler.GetRun)
 	protected.POST("/automations/runs/:id/retry", automationHandler.RetryRun)

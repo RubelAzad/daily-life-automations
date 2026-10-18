@@ -23,6 +23,11 @@ type Deps struct {
 	Search    services.SearchService
 	// Notifications is used by the automation-only notify tool.
 	Notifications repository.NotificationRepository
+	// Settings (time zone, quiet hours) and Briefings (today's plan) are
+	// used by recover_task; Planner by the automation-only plan_day.
+	Settings  repository.SettingsRepository
+	Briefings repository.BriefingRepository
+	Planner   Planner
 }
 
 const (
@@ -35,7 +40,7 @@ func BuiltinTools(d Deps) *Registry {
 	return NewRegistry(
 		getTodayTool(d), listTasksTool(d), createTaskTool(d), completeTaskTool(d), rescheduleTaskTool(d),
 		carryForwardTool(d), deleteTaskTool(d), listEventsTool(d), createEventTool(d),
-		searchNotesTool(d), searchDocumentsTool(d), createNoteTool(d), createReminderTool(d),
+		searchNotesTool(d), searchDocumentsTool(d), createNoteTool(d), createReminderTool(d), recoverTaskTool(d),
 	)
 }
 

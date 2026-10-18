@@ -99,6 +99,9 @@ func (e Executor) Propose(ctx context.Context, userID uint64, origin Origin, nam
 		return e.record(ctx, action, nil)
 	}
 	action.Summary = strPtr(truncateRunes(prep.summary, 500))
+	if len(prep.input) > 0 {
+		input, action.Input = prep.input, RedactJSON(prep.input)
+	}
 
 	settings, err := e.Settings.Get(ctx, userID)
 	if err != nil {

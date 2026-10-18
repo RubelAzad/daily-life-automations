@@ -65,6 +65,8 @@ func main() {
 		},
 		Reminders:     services.ReminderService{Reminders: reminderRepo, Tasks: tasks, Events: calEvents, Notes: notes},
 		Notifications: repository.NotificationRepository{DB: db},
+		Settings:      repository.SettingsRepository{DB: db},
+		Briefings:     repository.BriefingRepository{DB: db},
 	}
 	aiService := ai.NewService(
 		ai.NewClient(cfg.AI.Provider, cfg.AI.APIKey, cfg.AI.Model, cfg.AI.BaseURL, cfg.AI.MaxTokens, cfg.AI.Timeout),
@@ -89,7 +91,10 @@ func main() {
 	}
 	sched := scheduler.New(db, logger)
 	jobs.Register(sched)
-	automationTools := ai.AutomationTools(deps)
+	// plan_day writes briefings with the same briefer as the scheduled ones.
+	automationDeps := deps
+	automationDeps.Planner = jobs.Briefer
+	automationTools := ai.AutomationTools(automationDeps)
 	engine := workflow.Engine{
 		DB: db, Settings: repository.SettingsRepository{DB: db}, Events: bus, Log: logger,
 		Executor: ai.Executor{Tools: automationTools, Actions: repository.AIActionRepository{DB: db}, Settings: repository.SettingsRepository{DB: db}, Log: logger},

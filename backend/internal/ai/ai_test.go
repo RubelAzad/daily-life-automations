@@ -80,9 +80,24 @@ func TestDecodeStrict(t *testing.T) {
 	}
 }
 
+// The approvals inbox approves with the assistant's tools, so every
+// automation tool that can wait for approval must be one of them.
+func TestApprovableAutomationToolsAreBuiltin(t *testing.T) {
+	builtin := BuiltinTools(Deps{})
+	for _, tool := range AutomationTools(Deps{}).All() {
+		if tool.Risk == RiskRead {
+			continue
+		}
+		b, ok := builtin.Get(tool.Name)
+		if !ok || b.Risk != tool.Risk {
+			t.Errorf("%s can need approval but isn't a built-in tool with the same risk", tool.Name)
+		}
+	}
+}
+
 func TestBuiltinToolsAllowlist(t *testing.T) {
 	reg := BuiltinTools(Deps{})
-	if len(reg.All()) != 13 {
+	if len(reg.All()) != 14 {
 		t.Errorf("got %d tools", len(reg.All()))
 	}
 	for _, tool := range reg.All() {

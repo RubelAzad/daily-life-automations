@@ -21,6 +21,30 @@ func (h AutomationHandler) Catalog(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": workflow.CatalogData()})
 }
 
+// Templates lists the built-in workflows and which ones the user added.
+func (h AutomationHandler) Templates(c *gin.Context) {
+	list, err := h.Automations.ListTemplates(c.Request.Context(), middleware.CurrentUser(c).ID)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": list})
+}
+
+// AddTemplate creates an automation from a built-in workflow.
+func (h AutomationHandler) AddTemplate(c *gin.Context) {
+	a, err := h.Automations.AddTemplate(c.Request.Context(), middleware.CurrentUser(c).ID, c.Param("key"))
+	if errors.Is(err, workflow.ErrTemplateAdded) {
+		respondError(c, http.StatusConflict, err.Error())
+		return
+	}
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"data": a})
+}
+
 func (h AutomationHandler) List(c *gin.Context) {
 	list, err := h.Automations.List(c.Request.Context(), middleware.CurrentUser(c).ID)
 	if err != nil {

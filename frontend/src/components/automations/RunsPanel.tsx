@@ -33,6 +33,8 @@ const ACTION_LABELS: Record<string, string> = {
   reschedule_task: "Reschedule task",
   create_note: "Create note",
   create_reminder: "Set reminder",
+  recover_task: "Find a new time",
+  plan_day: "Plan the day",
 };
 
 type Props = {
