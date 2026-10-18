@@ -5,6 +5,8 @@
 //	go test -tags integration ./internal/workflow/
 //
 // It creates throwaway users (e2e-wf-*@example.com) and deletes them again.
+// Stop any running worker first: it shares the database and would pick up
+// the tests' jobs, which run on the tests' own clock.
 package workflow
 
 import (
@@ -129,6 +131,7 @@ func newFixture(t *testing.T, approvalMode string) fixture {
 	sched := &scheduler.Scheduler{DB: testDB, WorkerID: "wf-test", Now: c.Now}
 	sched.Handle(events.JobKind, engine.dispatch)
 	sched.Handle(JobRun, engine.runJob)
+	sched.Handle(JobRetry, engine.retryJob)
 	return fixture{
 		ctx: ctx, user: user.ID, clock: c, tasks: tasks, notes: notes, settings: settings, engine: engine, sched: sched,
 		service: Service{DB: testDB, Settings: settings, Tools: tools, Now: c.Now},
@@ -409,14 +412,19 @@ func TestOverdueAndIdempotentRuns(t *testing.T) {
 		t.Errorf("overdue notifications: %d", n)
 	}
 
-	// A retried run (same key) doesn't repeat its actions.
+	// A run job retried after a crash (same run key) resumes the same run
+	// and doesn't repeat its actions.
+	key := fmt.Sprintf("test-run-key-%d", time.Now().UnixNano())
+	var ids []uint64
 	for i := 0; i < 2; i++ {
-		if _, err := f.engine.execute(f.ctx, f.reload(t, a.ID), map[string]any{"task": map[string]any{"title": "Retry"}}, 0, "test-run-key"); err != nil {
+		run, err := f.engine.start(f.ctx, f.reload(t, a.ID), trigger{source: "event", runKey: key, data: map[string]any{"task": map[string]any{"title": "Retry"}}})
+		if err != nil {
 			t.Fatal(err)
 		}
+		ids = append(ids, run.ID)
 	}
-	if n := f.notifications(t, "Overdue: Retry"); n != 1 {
-		t.Errorf("retried run repeated its action: %d", n)
+	if n := f.notifications(t, "Overdue: Retry"); n != 1 || ids[0] != ids[1] {
+		t.Errorf("crash-retried run: %d notifications, runs %v", n, ids)
 	}
 }
 
@@ -424,7 +432,7 @@ func TestRunNowAndRateLimit(t *testing.T) {
 	f := newFixture(t, models.ApprovalHighImpactOnly)
 	manual := f.create(t, `{"name":"Ping","trigger":{"type":"manual"},"actions":[{"type":"notify","input":{"title":"Ping"}}]}`)
 	res, err := f.engine.RunNow(f.ctx, f.user, manual.ID)
-	if err != nil || res.Status != models.RunSucceeded || len(res.Actions) != 1 {
+	if err != nil || res.Status != models.RunSucceeded || len(res.Steps) != 1 || res.Steps[0].Status != models.AIStatusSucceeded || res.TriggerSource != "manual" {
 		t.Fatalf("run now: %+v %v", res, err)
 	}
 	event := f.create(t, `{"name":"On note","trigger":{"type":"note.created"},"actions":[{"type":"notify","input":{"title":"Saved {{note.title}}"}}]}`)

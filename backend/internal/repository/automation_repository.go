@@ -130,11 +130,16 @@ func (r AutomationRepository) SetNextRun(ctx context.Context, id uint64, next *t
 	return err
 }
 
-// RecordRun stores the outcome of a run.
-func (r AutomationRepository) RecordRun(ctx context.Context, id uint64, at time.Time, status string, errMsg *string) error {
+// RecordRun stores the outcome of a run, or of a retry of one (newRun false:
+// not counted again).
+func (r AutomationRepository) RecordRun(ctx context.Context, id uint64, at time.Time, status string, errMsg *string, newRun bool) error {
+	add := 0
+	if newRun {
+		add = 1
+	}
 	_, err := r.DB.ExecContext(ctx,
-		`UPDATE automations SET last_run_at = ?, last_status = ?, last_error = ?, run_count = run_count + 1, updated_at = updated_at WHERE id = ?`,
-		at.UTC(), status, errMsg, id)
+		`UPDATE automations SET last_run_at = ?, last_status = ?, last_error = ?, run_count = run_count + ?, updated_at = updated_at WHERE id = ?`,
+		at.UTC(), status, errMsg, add, id)
 	return err
 }
 

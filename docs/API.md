@@ -153,9 +153,9 @@ Module 18: **when** a trigger fires, **if** the conditions hold, **then** run th
 | GET | `/automations/:id` | One automation |
 | PATCH | `/automations/:id` | Any POST field. Changing the trigger type clears conditions unless you send new ones. |
 | DELETE | `/automations/:id` | `204`. Its past actions stay in the audit log. |
-| POST | `/automations/:id/run` | Runs a `schedule` or `manual` automation now (the schedule doesn't move) and returns `{status, error, actions: [{action_id, status, summary, error}]}`. `409` for event triggers, which need an event. |
+| POST | `/automations/:id/run` | Runs a `schedule` or `manual` automation now (the schedule doesn't move) and returns the run (see [Runs](#runs)). `409` for event triggers, which need an event. |
 
-**Read-only fields:** `next_run_at` (schedule triggers), `last_run_at`, `last_status` (`succeeded`, `waiting_approval`, `failed`, `skipped`), `last_error`, `run_count`.
+**Read-only fields:** `next_run_at` (schedule triggers), `last_run_at`, `last_status` (`succeeded`, `waiting_approval`, `retrying`, `failed`, `skipped`), `last_error`, `run_count` (retries don't count again).
 
 **Triggers** (`trigger.type`):
 
@@ -166,16 +166,36 @@ Module 18: **when** a trigger fires, **if** the conditions hold, **then** run th
 | `task.completed` | A task is marked completed | same as above |
 | `task.overdue` | An open task passes its due time (checked every `WORKER_INTERVAL_SECONDS`; tasks that went overdue in the last 24 h). Once per task and due time. | same as above |
 | `note.created` | A note is saved | `note.title`, `note.kind`, `note.tags`, `note.url`, `note.expires_on` |
+| `workflow.failed` | Another automation's run fails for good (after any automatic retries). An automation never reacts to its own failure. | `run.automation`, `run.error` |
 | `manual` | Only by `POST /automations/:id/run` | — |
 
 **Conditions:** `[{field, op, value}]`, all must hold, at most 10. Operators by field type: text `equals`, `not_equals`, `contains`, `not_contains`, `is_set`, `is_not_set` (case-insensitive); choice (`priority`, `kind`) `equals`, `not_equals`, `in`, `not_in` (value is a list); tags `contains`, `not_contains`, `is_set`, `is_not_set`; dates `is_set`, `is_not_set`. Conditions see the task or note as it was when the event happened.
 
 **Actions:** `[{type, input}]`, 1–5, run in order; a failed step stops the run. `type` is one of `notify` (`title`, `body`, `link`: an app path like `/tasks`), `create_task`, `complete_task`, `reschedule_task`, `create_note`, `create_reminder`, with the same input as the assistant's tools. Nothing that deletes, sends or spends.
-- **Placeholders** in strings: `{{automation.name}}`, `{{today}}` (local `YYYY-MM-DD`), `{{now}}`, and for task triggers `{{task.id}}`, `{{task.title}}`, `{{task.priority}}`, `{{task.status}}`, `{{task.list}}`, `{{task.project}}`, `{{task.due}}` (local, readable), for notes `{{note.id}}`, `{{note.title}}`, `{{note.kind}}`, `{{note.url}}`, `{{note.tags}}`. `"task_id": "{{task.id}}"` becomes the number. A placeholder the trigger doesn't have is a `422`.
+- **Placeholders** in strings: `{{automation.name}}`, `{{today}}` (local `YYYY-MM-DD`), `{{now}}`, and for task triggers `{{task.id}}`, `{{task.title}}`, `{{task.priority}}`, `{{task.status}}`, `{{task.list}}`, `{{task.project}}`, `{{task.due}}` (local, readable), for notes `{{note.id}}`, `{{note.title}}`, `{{note.kind}}`, `{{note.url}}`, `{{note.tags}}`, for `workflow.failed` `{{run.id}}`, `{{run.automation}}`, `{{run.error}}`. `"task_id": "{{task.id}}"` becomes the number. A placeholder the trigger doesn't have is a `422`.
 - **Relative times** in `due_at` and `remind_at`: `+30m`, `+2h`, `+1d`, `+1d 09:00`, `today 17:00`, `tomorrow 09:00` (local), or RFC 3339.
 - **Checked on save:** each action is decoded strictly against its tool's schema with sample values, so a broken action is a `422`, not a failed run later.
 
 **Approval:** actions follow `ai_approval_mode`. With `always` (the default), changes wait on the AI activity page and the user gets a notification ("… is waiting for your approval"); the run's status is `waiting_approval`. `notify` never needs approval.
+
+### Runs
+
+Every run is recorded (a run whose conditions don't hold isn't: nothing happened). History is kept for 90 days, and stays readable after its automation is deleted (`automation_id` becomes `null`).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/automations/runs` | Newest first. Query: `automation_id`, `status` (comma-separated), `page`, `per_page` (≤ 100). |
+| GET | `/automations/runs/:id` | One run |
+| POST | `/automations/runs/:id/retry` | Retries a `failed` or `retrying` run now, as its next attempt, with the automation's **current** actions. `409` if the run didn't fail or its automation was deleted. |
+
+**Run fields:** `automation_name`, `trigger_type`, `trigger_source` (`schedule`, `event`, `manual`), `trigger_summary` (e.g. the task's title), `status` (`running`, `succeeded`, `waiting_approval`, `retrying`, `failed`, `skipped`), `error` (which step failed and why), `attempt`, `next_retry_at`, `started_at`, `finished_at`, `duration_ms` (of the latest attempt), and `steps: [{index, type, status, action_id, summary, error, attempt}]`. A step's `status` is its action's (`succeeded`, `pending_approval`, `failed`, `rejected`, `expired`) or `not_run`; `action_id` links to the [audit log](#ai-assistant).
+
+**Retries and errors:**
+- **Automatic:** a step that fails unexpectedly (an internal error) is retried after 1 minute, then 5 (3 attempts in all), as `retrying`. Failures caused by the input (invalid input, a task that doesn't exist) aren't retried: retrying wouldn't help.
+- **Resumes, doesn't repeat:** a retry continues from the step that failed. Steps that already succeeded, or are waiting for approval, aren't run again.
+- **When a run fails for good:** the user gets a notification linking to the run (`/automations?run=<id>`), and `workflow.failed` fires for other automations.
+- **Approvals:** steps waiting for approval show the user's decision when the run is read: approved steps become `succeeded`; a declined or expired step fails the run.
+- **Crashes:** a worker that dies mid-run leaves the run `running`; its job is picked up again and resumes the same run, skipping actions already recorded.
 
 **Safety:**
 - **No loops:** an automation never reacts to its own changes, and chains (A's task triggers B, whose task triggers C, …) stop after 3 levels.

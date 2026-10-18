@@ -835,7 +835,7 @@ export type Trigger = { type: string; schedule?: Schedule };
 export type Condition = { field: string; op: string; value?: string | string[] };
 /** Strings in input may use {{placeholders}}; due_at and remind_at may be relative ("+1d", "tomorrow 09:00"). */
 export type AutomationAction = { type: string; input: Record<string, unknown> };
-export type RunStatus = "succeeded" | "waiting_approval" | "failed" | "skipped";
+export type RunStatus = "running" | "succeeded" | "waiting_approval" | "retrying" | "failed" | "skipped";
 
 export type Automation = {
   id: number;
@@ -859,7 +859,26 @@ export type ActionSpec = { type: string; label: string; description: string };
 export type AutomationCatalog = { triggers: TriggerSpec[]; actions: ActionSpec[]; operators: Record<AutomationField["type"], string[]> };
 
 export type AutomationInput = Partial<Pick<Automation, "name" | "enabled" | "trigger" | "conditions" | "actions">>;
-export type RunResult = { status: RunStatus; error: string | null; actions: { action_id: number; status: string; summary?: string; error?: string }[] };
+/** One step of a run: an action's outcome, linked to its entry on the AI activity page. */
+export type RunStep = { index: number; type: string; status: string; action_id?: number; summary?: string; error?: string; attempt: number };
+
+/** One run of an automation. */
+export type WorkflowRun = {
+  id: number;
+  automation_id: number | null; // null once the automation is deleted
+  automation_name: string;
+  trigger_type: string;
+  trigger_source: "schedule" | "event" | "manual";
+  trigger_summary: string | null;
+  status: RunStatus;
+  error: string | null;
+  steps: RunStep[];
+  attempt: number;
+  next_retry_at: string | null;
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number | null;
+};
 
 export async function getAutomationCatalog() {
   return (await request<{ data: AutomationCatalog }>("/automations/catalog")).data;
@@ -883,5 +902,19 @@ export function deleteAutomation(id: number) {
 
 /** Runs a schedule or manual automation now. */
 export async function runAutomation(id: number) {
-  return (await request<{ data: RunResult }>(`/automations/${id}/run`, { method: "POST" })).data;
+  return (await request<{ data: WorkflowRun }>(`/automations/${id}/run`, { method: "POST" })).data;
+}
+
+export async function listAutomationRuns(params: { automation_id?: number; status?: string; page?: number; per_page?: number } = {}) {
+  const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]));
+  return request<{ data: WorkflowRun[]; meta: PageMeta }>(`/automations/runs?${q}`);
+}
+
+export async function getAutomationRun(id: number) {
+  return (await request<{ data: WorkflowRun }>(`/automations/runs/${id}`)).data;
+}
+
+/** Retries a failed run now, from the step that failed. */
+export async function retryAutomationRun(id: number) {
+  return (await request<{ data: WorkflowRun }>(`/automations/runs/${id}/retry`, { method: "POST" })).data;
 }

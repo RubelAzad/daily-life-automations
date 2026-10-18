@@ -51,6 +51,9 @@ type Result struct {
 	Summary  string `json:"summary,omitempty"`
 	Output   any    `json:"output,omitempty"`
 	Error    string `json:"error,omitempty"`
+	// Retryable: it failed unexpectedly (not bad input or missing data), so
+	// trying again later may work.
+	Retryable bool `json:"-"`
 }
 
 func (e Executor) now() time.Time {
@@ -196,6 +199,9 @@ func (e Executor) run(ctx context.Context, prep prepared, action *models.AIActio
 	out, err := prep.run(ctx)
 	if err != nil {
 		action.Status, action.Error = models.AIStatusFailed, strPtr(e.errorText(err))
+		if unexpected(err) {
+			action.Error = strPtr(retryableError)
+		}
 		return nil
 	}
 	action.Status = models.AIStatusSucceeded
@@ -208,7 +214,21 @@ func (e Executor) record(ctx context.Context, action models.AIAction, output any
 	if err != nil {
 		return Result{}, err
 	}
-	return Result{ActionID: id, Status: action.Status, Summary: deref(action.Summary), Output: output, Error: deref(action.Error)}, nil
+	return Result{
+		ActionID: id, Status: action.Status, Summary: deref(action.Summary), Output: output, Error: deref(action.Error),
+		Retryable: deref(action.Error) == retryableError,
+	}, nil
+}
+
+// retryableError is the message for an unexpected tool failure.
+const retryableError = "internal error"
+
+// unexpected reports an error that isn't the caller's fault: not invalid
+// input and not missing data.
+func unexpected(err error) bool {
+	var ve *services.ValidationError
+	var ie *InputError
+	return !errors.As(err, &ve) && !errors.As(err, &ie) && !errors.Is(err, repository.ErrNotFound)
 }
 
 // errorText turns an error into a message safe to show the user and the

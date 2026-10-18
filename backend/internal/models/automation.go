@@ -31,6 +31,8 @@ const (
 	TriggerTaskCompleted = "task.completed"
 	TriggerTaskOverdue   = "task.overdue"
 	TriggerNoteCreated   = "note.created"
+	// TriggerWorkflowFailed fires when another automation's run fails for good.
+	TriggerWorkflowFailed = "workflow.failed"
 )
 
 // Trigger is what starts an automation.
@@ -70,3 +72,45 @@ const (
 	RunFailed          = "failed"
 	RunSkipped         = "skipped"
 )
+
+// Run statuses beyond the outcomes above.
+const (
+	RunRunning  = "running"
+	RunRetrying = "retrying" // failed; an automatic retry is scheduled
+)
+
+// WorkflowRun is one run of an automation.
+type WorkflowRun struct {
+	ID             uint64          `json:"id"`
+	UserID         uint64          `json:"-"`
+	AutomationID   *uint64         `json:"automation_id"`
+	AutomationName string          `json:"automation_name"`
+	TriggerType    string          `json:"trigger_type"`
+	TriggerSource  string          `json:"trigger_source"` // schedule | event | manual
+	TriggerSummary *string         `json:"trigger_summary"`
+	TriggerData    json.RawMessage `json:"-"`
+	Depth          int             `json:"-"`
+	RunKey         string          `json:"-"`
+	Status         string          `json:"status"`
+	Error          *string         `json:"error"`
+	Steps          []RunStep       `json:"steps"`
+	Attempt        int             `json:"attempt"`
+	NextRetryAt    *time.Time      `json:"next_retry_at"`
+	StartedAt      time.Time       `json:"started_at"`
+	FinishedAt     *time.Time      `json:"finished_at"`
+	DurationMS     *int            `json:"duration_ms"`
+}
+
+// RunStep is the outcome of one action in a run.
+type RunStep struct {
+	Index    int     `json:"index"`
+	Type     string  `json:"type"`
+	Status   string  `json:"status"` // an AI action status, or "not_run"
+	ActionID *uint64 `json:"action_id,omitempty"`
+	Summary  string  `json:"summary,omitempty"`
+	Error    string  `json:"error,omitempty"`
+	Attempt  int     `json:"attempt"`
+}
+
+// StepNotRun marks a step a run never reached.
+const StepNotRun = "not_run"

@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import AppHeader, { ErrorBanner } from "@/components/AppHeader";
 import AutomationEditor from "@/components/automations/AutomationEditor";
+import RunsPanel from "@/components/automations/RunsPanel";
 import { WorkerWarning } from "@/components/WorkerStatus";
 import {
   deleteAutomation,
@@ -54,6 +56,8 @@ const PRESETS: { label: string; input: AutomationInput }[] = [
 ];
 
 const STATUS_TEXT: Record<string, [string, string]> = {
+  running: ["running", "text-blue-700 dark:text-blue-400"],
+  retrying: ["failed, retrying", "text-amber-700 dark:text-amber-400"],
   succeeded: ["ran", "text-green-700 dark:text-green-400"],
   waiting_approval: ["waiting for approval", "text-amber-700 dark:text-amber-400"],
   failed: ["failed", "text-red-600 dark:text-red-400"],
@@ -82,6 +86,9 @@ export default function AutomationsView() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [version, setVersion] = useState(0);
+  const [historyFor, setHistoryFor] = useState<{ id: number; name: string } | null>(null);
+  const runParam = useSearchParams().get("run");
+  const openRunId = runParam && /^\d+$/.test(runParam) ? Number(runParam) : null;
 
   const showError = useCallback((err: unknown) => setError(errorMessage(err)), []);
   const reload = () => setVersion((v) => v + 1);
@@ -224,6 +231,9 @@ export default function AutomationsView() {
                         Run now
                       </button>
                     )}
+                    <button type="button" onClick={() => setHistoryFor({ id: a.id, name: a.name })} className={small}>
+                      History
+                    </button>
                     <button type="button" onClick={() => setEditing({ automation: a })} className={small}>
                       Edit
                     </button>
@@ -250,13 +260,24 @@ export default function AutomationsView() {
                   {a.enabled && a.next_run_at && <span>Next run: {formatDue(a.next_run_at)}</span>}
                   {a.trigger.type === "schedule" && a.enabled && !a.next_run_at && <span>No more runs</span>}
                 </div>
-                {a.last_error && (a.last_status === "failed" || a.last_status === "skipped") && (
+                {a.last_error && (a.last_status === "failed" || a.last_status === "retrying" || a.last_status === "skipped") && (
                   <p className="text-xs text-red-600 dark:text-red-400">{a.last_error}</p>
                 )}
               </li>
             );
           })}
         </ul>
+      )}
+
+      {list !== null && (list.length > 0 || openRunId) && (
+        <RunsPanel
+          automation={historyFor}
+          onClearAutomation={() => setHistoryFor(null)}
+          openRunId={openRunId}
+          version={version}
+          onError={setError}
+          onChanged={reload}
+        />
       )}
     </div>
   );

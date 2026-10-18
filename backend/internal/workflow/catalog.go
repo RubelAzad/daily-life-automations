@@ -55,9 +55,14 @@ var (
 		{Name: "note.url", Label: "Link", Type: "text"},
 		{Name: "note.expires_on", Label: "Expiry date", Type: "date"},
 	}
+	runFields = []Field{
+		{Name: "run.automation", Label: "Automation name", Type: "text"},
+		{Name: "run.error", Label: "Error", Type: "text"},
+	}
 	common           = []string{"automation.name", "today", "now"}
 	taskPlaceholders = append([]string{"task.id", "task.title", "task.priority", "task.status", "task.list", "task.project", "task.due"}, common...)
 	notePlaceholders = append([]string{"note.id", "note.title", "note.kind", "note.url", "note.tags"}, common...)
+	runPlaceholders  = append([]string{"run.id", "run.automation", "run.error"}, common...)
 )
 
 // Triggers is the trigger catalog, in display order.
@@ -67,6 +72,7 @@ var Triggers = []TriggerSpec{
 	{Type: models.TriggerTaskCompleted, Label: "Task completed", Description: "When a task is marked completed.", Fields: taskFields, Placeholders: taskPlaceholders},
 	{Type: models.TriggerTaskOverdue, Label: "Task overdue", Description: "When an open task passes its due time (checked about every 30 seconds).", Fields: taskFields, Placeholders: taskPlaceholders},
 	{Type: models.TriggerNoteCreated, Label: "Note created", Description: "When you save a new note, link, document or receipt.", Fields: noteFields, Placeholders: notePlaceholders},
+	{Type: models.TriggerWorkflowFailed, Label: "Another automation failed", Description: "When a run of one of your other automations fails and won't be retried.", Fields: runFields, Placeholders: runPlaceholders},
 	{Type: models.TriggerManual, Label: "Manually", Description: "Only when you press Run.", Fields: []Field{}, Placeholders: common, RunNow: true},
 }
 

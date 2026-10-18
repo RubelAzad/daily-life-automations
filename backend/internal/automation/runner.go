@@ -25,6 +25,8 @@ const (
 	// idempotency keys can be used again).
 	keepDoneJobs   = 30 * 24 * time.Hour
 	keepFailedJobs = 90 * 24 * time.Hour
+	// Automation run history is kept this long.
+	keepRuns = 90 * 24 * time.Hour
 )
 
 // SystemJobs is the worker's recurring background work, run as repeating
@@ -87,7 +89,7 @@ func (j SystemJobs) search(ctx context.Context, _ scheduler.Job) error {
 	return nil
 }
 
-// prune deletes old finished one-off jobs, in batches.
+// prune deletes old finished one-off jobs and automation runs, in batches.
 func (j SystemJobs) prune(ctx context.Context, _ scheduler.Job) error {
 	now := time.Now().UTC()
 	var total int64
@@ -101,8 +103,19 @@ func (j SystemJobs) prune(ctx context.Context, _ scheduler.Job) error {
 			break
 		}
 	}
-	if j.Verbose || total > 0 {
-		j.Log.Printf("scheduler: pruned %d finished jobs", total)
+	var runs int64
+	for {
+		n, err := repository.WorkflowRunRepository{DB: j.DB}.PruneBefore(ctx, now.Add(-keepRuns), 1000)
+		if err != nil {
+			return err
+		}
+		runs += n
+		if n < 1000 {
+			break
+		}
+	}
+	if j.Verbose || total+runs > 0 {
+		j.Log.Printf("scheduler: pruned %d finished jobs and %d automation runs", total, runs)
 	}
 	return nil
 }
